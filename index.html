@@ -124,6 +124,8 @@
         layers: [BASEMAPS.OpenStreetMap]
     });
 
+    L.control.layers(BASEMAPS, null, { position: 'bottomright' }).addTo(lfmap);
+
     const SCALE = new L.control.scaleNautical({
         maxWidth: 300,
         nauticalMilesUnit: "sjömil"
@@ -141,6 +143,14 @@
     document.getElementById('showStationarySwitch').addEventListener('change', function (event) {
         showStationary = event.target.checked;
         redrawAllMarkers();
+    });
+
+    lfmap.on('baselayerchange', function (e) {
+       if (e.name === 'Satellit') {
+           document.documentElement.style.setProperty('--accent-color', '#e1e1e1'); 
+       } else {
+           document.documentElement.style.setProperty('--accent-color', '#003660'); 
+       }
     });
 
     function redrawAllMarkers() {
@@ -382,7 +392,7 @@
                 });
                 vectorGroup.addLayer(outline);
 
-                // Röd linje (ovanpå)
+                // Rosa linje (ovanpå)
                 const polyline = L.polyline([start, end], {
                     color: '#D70077',
                     weight: 3,
