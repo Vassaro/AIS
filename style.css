@@ -122,6 +122,25 @@ body {
     bottom: 15px;
 }
 
+.leaflet-control-layers-toggle {
+    width: 30px !important;
+    height: 30px !important;
+    background-size: 18px 18px !important;
+}
+
+.leaflet-control-layers {
+    font-size: 12px !important;
+}
+
+.leaflet-control-layers-list {
+    margin-bottom: 0 !important;
+}
+
+.leaflet-touch .leaflet-control-layers,
+.leaflet-control-layers-expanded {
+    padding: 4px 8px !important;
+}
+
 @media only screen and (max-width: 600px) {
     .hidden-mobile {
         display: none;

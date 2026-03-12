@@ -44,7 +44,7 @@
             <div class="navbar-end">
                 <div class="navbar-item has-dropdown is-hoverable">
                     <a class="navbar-link hidden-mobile">
-                        <i class="fa-solid fa-ship"></i>&nbsp;Fartyg
+                        <i class="fa-solid fa-ship"></i>&nbsp;Markers
                     </a>
                     <div class="navbar-dropdown is-right">
                         <div class="navbar-item is-flex is-align-items-center">
@@ -53,10 +53,17 @@
                                 <span class="custom-slider"></span>
                             </label>Visa alla fartyg</span>
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center">
+                            <label class="custom-switch">
+                                <input type="checkbox" id="showStationarySwitch">
+                                <span class="custom-slider"></span>
+                            </label>Visa fasta punkter
+                        </div>
                         <div class="navbar-item">
                             <div class="table-container" style="max-height: 500px; overflow: scroll;">
                                 <table class="table is-striped is-fullwidth">
                                     <thead>
+                                        <th colspan="5" style="text-align: center; background-color: #f5f5f5;">Fartyg</th>
                                         <tr>
                                             <th>Namn</th>
                                             <th>Fart</th>
@@ -101,22 +108,23 @@
         })
     };
 
+
+    const SOUTH_WEST = L.latLng(55.3, 10.0);
+    const NORTH_EAST = L.latLng(69.0, 24.5);
+    const BOUNDS = L.latLngBounds(SOUTH_WEST, NORTH_EAST);
+
     // Kartan börjar centrerad runt Strömsviken - Djuphamn
     var lfmap = L.map('map', {
         center: [60.24521, 18.68388],
         zoom: 13,
-        // minZoom: 10,
+        minZoom: 8,
+        maxBounds: BOUNDS,
+        maxBoundsViscosity: 1.0,
         zoomControl: false,
         layers: [BASEMAPS.OpenStreetMap]
     });
 
-    // const SOUTH_WEST = L.latLng(60.0, 18.0);
-    // const NORTH_EAST = L.latLng(60.4, 19.0);
-    // const BOUNDS = L.latLngBounds(SOUTH_WEST, NORTH_EAST);
-    // lfmap.setMaxBounds(BOUNDS);
-    // lfmap.on('drag', function () {
-    //     lfmap.panInsideBounds(BOUNDS, { animate: true });
-    // });
+    L.control.layers(BASEMAPS, null, { position: 'bottomright' }).addTo(lfmap);
 
     const SCALE = new L.control.scaleNautical({
         maxWidth: 300,
@@ -125,9 +133,27 @@
 
 
     let showAllShips = false;
+    let showStationary = false;
 
     document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
         showAllShips = event.target.checked;
+        redrawAllMarkers();
+    });
+
+    document.getElementById('showStationarySwitch').addEventListener('change', function (event) {
+        showStationary = event.target.checked;
+        redrawAllMarkers();
+    });
+
+    lfmap.on('baselayerchange', function (e) {
+       if (e.name === 'Satellit') {
+           document.documentElement.style.setProperty('--accent-color', '#e1e1e1'); 
+       } else {
+           document.documentElement.style.setProperty('--accent-color', '#003660'); 
+       }
+    });
+
+    function redrawAllMarkers() {
         // Ta bort alla nuvarande markörer och vektorer
         Object.values(shipMarkers).forEach(marker => lfmap.removeLayer(marker));
         Object.values(shipVectors).forEach(vector => lfmap.removeLayer(vector));
@@ -137,7 +163,7 @@
         Object.values(shipLastUpdate).forEach(message => {
             createMarker(message);
         });
-    });
+    }
 
     // WEB SOCKET
     const ws = new WebSocket("wss://jumpgate.vassaro.net/ws/");
@@ -181,6 +207,12 @@
         iconUrl: 'img/Boat marker.svg',
         iconSize: [42, 42],
         iconAnchor: [21, 21], // mitten av ikonen
+    });
+
+    const stationaryIcon = L.icon({
+        iconUrl: 'img/stationary.svg',
+        iconSize: [42, 42],
+        iconAnchor: [21, 42], // botten av ikonen
     });
 
     const locationIcon = L.divIcon({
@@ -229,8 +261,8 @@
 
     function createMarker(message) {
         if (!message.coordinates || !message.name) return;
-        if (!message.legend && !message.navigationalStatus) return;
-        const shipName = message.name.trim();
+        // if (!message.legend && !message.navigationalStatus) return;
+        const shipName = message.name.split(/[!\[]/)[0].trim();
 
         const infoHTML = `
             <table>
@@ -243,7 +275,7 @@
                 <tbody>
                     <tr>
                         <td>Fart:</td>
-                        <td>${message.speed || "0"} knop</td>
+                        <td>${message.speed + " knop" || "-"}</td>
                     </tr>
                     <tr>
                         <td>Kurs:</td>
@@ -269,27 +301,56 @@
             </table>
         `;
 
+        const statInfoHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <td style="font-weight: bold;"><i class="fa-solid fa-ship"></i></td>
+                        <td style="font-weight: bold;">${formatName(shipName) || "<i>Inget namn...</i>"}</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Koordinater:</td>
+                        <td>N${parseFloat(message.coordinates[0]).toFixed(5)}, E${parseFloat(message.coordinates[1]).toFixed(5)}</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+        
+
+        const isConsideredFixed = isFixed(shipName, message);
+
         if (
             (
                 showAllShips ||
                 TRACKED_SHIPS.includes(shipName) ||
                 shipName.toUpperCase().includes("RESCUE") ||
-                (shipName.toUpperCase().includes("VASSARO") && !shipName.toUpperCase().includes("REF POINT"))
+                shipName.toUpperCase().includes("VASSARO") ||
+                isConsideredFixed
             )
-            && !shipName.toUpperCase().includes("REF POINT")
         ) {
+
+            if (isConsideredFixed && !showStationary) {
+                return;
+            }               
+
+            const currentIcon = isConsideredFixed ? stationaryIcon : arrowIcon;
+            const currentHTML = isConsideredFixed ? statInfoHTML : infoHTML;
+
             // console.log(message)
             if (shipMarkers[shipName]) {
                 shipMarkers[shipName]
                     .setLatLng(message.coordinates)
                     .setRotationAngle(message.course || 0)
-                    .setPopupContent(infoHTML)
+                    .setIcon(currentIcon)
+                    .setPopupContent(currentHTML)
             } else {
                 const marker = L.marker(message.coordinates, {
                     rotationAngle: message.course || 0,
-                    icon: arrowIcon
+                    icon: currentIcon
                 });
-                marker.bindPopup(infoHTML, {
+                marker.bindPopup(currentHTML, {
                     offset: [0, -10],
                     className: "shipPopup",
                 });
@@ -331,7 +392,7 @@
                 });
                 vectorGroup.addLayer(outline);
 
-                // Röd linje (ovanpå)
+                // Rosa linje (ovanpå)
                 const polyline = L.polyline([start, end], {
                     color: '#D70077',
                     weight: 3,
@@ -380,26 +441,68 @@
         const shipTableBody = document.getElementById("shipTableBody");
         shipTableBody.innerHTML = "";
 
-        Object.keys(shipMarkers)
-            .sort((a, b) => a.localeCompare(b, "sv-se"))
-            .forEach(shipName => {
-                const message = shipLastUpdate[shipName];
-                if (!message) return;
+        const allShips = Object.keys(shipMarkers).sort((a, b) => a.localeCompare(b, "sv-se"));
 
-                const row = document.createElement("tr");
-                row.innerHTML = `
-                    <td>${formatName(shipName)}</td>
-                    <td>${renderSpeed(message)} knop</td>
-                    <td>${renderCourse(message)}</td>
-                    <td>${renderTime(message)}</td>
-                    <td>
-                        <button class="button is-small" onclick="focusShip('${shipName}')">
-                            <i class="fa-solid fa-crosshairs"></i>
-                        </button>
-                    </td>
-                `;
+        const movingShips = [];
+        const fixedPoints = [];
+
+        allShips.forEach(shipName => {
+            const message = shipLastUpdate[shipName] || {};
+            // if (!message) return;
+
+            const isConsideredFixed = isFixed(shipName, message);
+
+            if(isConsideredFixed){
+                fixedPoints.push(shipName);
+            } else {
+                movingShips.push(shipName);
+            }
+        });
+
+        movingShips.forEach(shipName => {
+            const message = shipLastUpdate[shipName] || {};
+            const row = createTableRow(shipName, message);
+            shipTableBody.appendChild(row);
+        });
+
+        if (showStationary && fixedPoints.length > 0) {
+            const headerRow = document.createElement("tr");
+            headerRow.innerHTML = `
+                <th colspan="5" style="text-align: center; background-color: #f5f5f5;">Fasta punkter</th>
+            `;
+            shipTableBody.appendChild(headerRow);
+
+            fixedPoints.forEach(shipName => {
+                const message = shipLastUpdate[shipName] || {};
+                const row = createTableRow(shipName, message);
                 shipTableBody.appendChild(row);
             });
+        }
+    }
+
+    function createTableRow(shipName, message) {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${formatName(shipName)}</td>
+            <td>${renderSpeed(message)}</td>
+            <td>${renderCourse(message)}</td>
+            <td>${renderTime(message)}</td>
+            <td>
+                <button class="button is-small" onclick="focusShip('${shipName}')">
+                    <i class="fa-solid fa-crosshairs"></i>
+                </button>
+            </td>
+        `;
+        return row;
+    }
+
+    function isFixed(shipName, message) {
+        const isRefPoint = shipName.toUpperCase().includes("REF POINT");
+        const isStationary = (!message.speed || message.speed === 0) && !message.course 
+                && message.legend == "Unspecified" && message.navigationalStatus == "Not defined (default)";
+        const isRock = shipName.toUpperCase().includes("GRUND")
+        const isVartan = shipName.toUpperCase().includes("VARTAN")
+        return isStationary || isRefPoint || isRock || isVartan;
     }
 
     function focusShip(shipName) {
@@ -413,7 +516,7 @@
 
     function renderSpeed(message) {
         if (message.speed) {
-            return message.speed.toFixed(1) > 0.2 ? message.speed.toFixed(1) : 0;
+            return (message.speed.toFixed(1) > 0.2 ? message.speed.toFixed(1) : 0) + " knop";
         } else {
             return "-";
         }
