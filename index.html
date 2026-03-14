@@ -105,7 +105,7 @@
          <div class="is-flex is-justify-content-center is-align-items-center mb-3">
             <span class="is-size-7 mr-2 has-text-weight-bold">48h</span>
             <label class="custom-switch">
-                <input type="checkbox" id="historyDurationSwitch" checked onchange="updateSliderRange()">
+                <input type="checkbox" id="historyDurationSwitch" checked onchange="toggleHistoryDuration()">
                 <span class="custom-slider"></span>
             </label>
             <span class="is-size-7 ml-2 has-text-weight-bold">24h</span>
@@ -133,7 +133,7 @@
                     <input 
                         id="history-slider" 
                         class="slider" 
-                        style="width: 100%; position: absolute; background: transparent; -webkit-appearance: none; margin: 0; cursor: pointer;"
+                        style="width: 100%; position: absolute; background: transparent; -webkit-appearance: none; appearance: none; margin: 0; cursor: pointer;"
                         step="1" 
                         type="range"
                         oninput="updateHistoryFromSlider(this.value)"
@@ -207,9 +207,15 @@
 
     lfmap.on('baselayerchange', function (e) {
        if (e.name === 'Satellit') {
-           document.documentElement.style.setProperty('--accent-color', '#e1e1e1'); 
+           document.documentElement.style.setProperty('--accent-color', '#e1e1e1');
+           if (historyPath) {
+               historyPath.setStyle({ color: 'rgba(255, 255, 255, 0.4)' });
+           } 
        } else {
-           document.documentElement.style.setProperty('--accent-color', '#003660'); 
+           document.documentElement.style.setProperty('--accent-color', '#003660');
+           if (historyPath) {
+               historyPath.setStyle({ color: 'rgba(0, 54, 96, 0.4)' });
+           } 
        }
     });
 
@@ -229,6 +235,10 @@
     const ws = new WebSocket("wss://jumpgate.vassaro.net/ws/");
 
     var shipLastUpdate = {};
+
+    let historyMarker = null;
+    let historyPath = null;
+    let historyVector = null;
 
     ws.onmessage = (event) => {
         if (event.data.startsWith('42["vesselPositions-init"')) {
@@ -509,17 +519,19 @@
     let historyData = [];
     let historyLayerGroup = L.layerGroup();
     let isHistoryMode = false;
-    let historyDurationHours = 48; 
     let currentHistoryShipName = "";
 
     function toggleHistoryDuration() {
-        // Kolla om switchen är på (48h) eller av (24h)
         const is24h = document.getElementById('historyDurationSwitch').checked;
         historyDurationHours = is24h ? 24 : 48;
 
-        // Rita om om vi är i history-läge
         if (isHistoryMode && historyData.length > 0) {
-            initializeHistoryMap(currentHistoryShipName);
+            // Spara nuvarande tid från slidern
+            const slider = document.getElementById('history-slider');
+            const currentTime = slider ? parseInt(slider.value) : null;
+            
+            // Skicka med tiden till funktionen
+            initializeHistoryMap(currentHistoryShipName, currentTime);
         }
     }
 
@@ -570,53 +582,67 @@
         }
     }
 
-    let historyMarker = null;
-    let historyPath = null;
-    let historyVector = null;
-
-    function initializeHistoryMap(shipName) {
+    function initializeHistoryMap(shipName, startAtTime = null) {
         historyLayerGroup.addTo(lfmap);
         document.getElementById('history-title').innerText = formatName(shipName);
         historyLayerGroup.clearLayers();
+
+        const is24h = document.getElementById('historyDurationSwitch').checked;
+        const durationHours = is24h ? 24 : 48;
+        const cutoffTime = Date.now() - (durationHours * 60 * 60 * 1000);
+
+        const visibleData = historyData.filter(p => new Date(p.timestamp).getTime() >= cutoffTime);
 
         const GAP_THRESHOLD = 60 * 60 * 1000;
         let segments = [];
         let currentSegment = [];
 
-        if (historyData.length > 0) {
+        if (visibleData.length > 0) {
             // Starta första segmentet
-            currentSegment.push([historyData[0].latitude, historyData[0].longitude]);
+            currentSegment.push([visibleData[0].latitude, visibleData[0].longitude]);
 
-            for (let i = 0; i < historyData.length - 1; i++) {
-                const t1 = new Date(historyData[i].timestamp).getTime();
-                const t2 = new Date(historyData[i+1].timestamp).getTime();
-                const nextLatLng = [historyData[i+1].latitude, historyData[i+1].longitude];
+            for (let i = 0; i < visibleData.length - 1; i++) {
+                const t1 = new Date(visibleData[i].timestamp).getTime();
+                const t2 = new Date(visibleData[i+1].timestamp).getTime();
+                const nextLatLng = [visibleData[i+1].latitude, visibleData[i+1].longitude];
 
                 if (t2 - t1 > GAP_THRESHOLD) {
                     // Spara nuvarande segment och börja ett nytt
                     segments.push(currentSegment);
                     currentSegment = [nextLatLng];
                 } else {
-                    // Inget hål, fortsätt rita
+                    // Inget hål
                     currentSegment.push(nextLatLng);
                 }
             }
-            // Glöm inte spara det sista segmentet
+            // Spara sista segmentet
             segments.push(currentSegment);
         }
 
+        const isSatellite = lfmap.hasLayer(BASEMAPS.Satellit);
+        const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 54, 96, 0.4)';
+        
         historyPath = L.polyline(segments, {
-            color: 'rgba(0, 54, 96, 0.4)',
+            color: pathColor,
             weight: 3,
             dashArray: '5, 10'
         }).addTo(historyLayerGroup);
 
         lfmap.fitBounds(historyPath.getBounds(), { padding: [50, 50] });
+        
+        let targetPoint = null;
 
-        const lastPoint = historyData.length > 0 ? historyData[historyData.length - 1] : null;
+        if (startAtTime && startAtTime >= cutoffTime) {
+            const { point } = findNearestDataPoint(startAtTime);
+            targetPoint = point;
+        }
+        
+        if (!targetPoint && historyData.length > 0) {
+            targetPoint = historyData[historyData.length - 1];
+        }
 
-        if (lastPoint) {
-            historyMarker = L.marker([lastPoint.latitude, lastPoint.longitude], {
+        if (targetPoint) {
+            historyMarker = L.marker([targetPoint.latitude, targetPoint.longitude], {
                 icon: arrowIcon,
                 zIndexOffset: 1000
             }).addTo(historyLayerGroup);
@@ -624,10 +650,10 @@
 
         updateSliderRange();
 
-        if (lastPoint) {
+        if (targetPoint) {
             const slider = document.getElementById('history-slider');
-            slider.value = new Date(lastPoint.timestamp).getTime();
-            updateHistoryUI_Render(lastPoint);
+            slider.value = new Date(targetPoint.timestamp).getTime();
+            updateHistoryUI_Render(targetPoint);
         }
     }
 
@@ -649,13 +675,11 @@
         slider.min = minMs;
         slider.max = nowMs;
 
-        // Om slidern hamnade utanför fönstret (för gammal tid), flytta fram den
         if (currentValue < minMs) {
             slider.value = minMs;
             updateHistoryFromSlider(minMs);
         }
 
-        // --- RITA NY BAKGRUNDSGRADIENT ---
         if (historyData.length < 2) {
             gradientBar.style.background = '#ddd';
             return;
@@ -663,51 +687,74 @@
 
         const totalDuration = nowMs - minMs;
         let gradientStops = [];
+        const GAP_THRESHOLD = 60 * 60 * 1000; // 1 timme
 
-        const GAP_THRESHOLD = 60 * 60 * 1000;
+        // Bygger lista med segment: {Start, End, Type='data'|'gap'}
+        let segments = [];
 
-         const firstT = new Date(historyData[0].timestamp).getTime();
-        const firstPct = Math.max(0, Math.min(100, ((firstT - minMs) / totalDuration) * 100));
-        
-        // Lägg till start-block (Hårt stopp: #ddd 0% -> #ddd X%)
-        gradientStops.push(`#ddd 0%`); 
-        gradientStops.push(`#ddd ${firstPct.toFixed(2)}%`);
+        // Hitta startpunkt för första datasegmentet
+        let currentStart = new Date(historyData[0].timestamp).getTime();
+        let lastTime = currentStart;
 
-        // 2. Loopa igenom alla segment
-        for(let i = 0; i < historyData.length - 1; i++) {
+        // Om första punkten är senare än minMs, börja med ett gap
+        if (currentStart > minMs) {
+            segments.push({ start: minMs, end: currentStart, type: 'gap' });
+        }
+
+        for (let i = 0; i < historyData.length - 1; i++) {
             const t1 = new Date(historyData[i].timestamp).getTime();
             const t2 = new Date(historyData[i+1].timestamp).getTime();
             
-            // Skippa segment som ligger helt utanför vyn
-            if (t2 < minMs) continue;
+            if (t2 < minMs) {
+                currentStart = t2;
+                lastTime = t2;
+                continue;
+            }
+            
             if (t1 > nowMs) break;
 
-            const p1 = Math.max(0, Math.min(100, ((t1 - minMs) / totalDuration) * 100));
-            const p2 = Math.max(0, Math.min(100, ((t2 - minMs) / totalDuration) * 100));
+            const diff = t2 - t1;
 
-            // Bestäm färg: Grön om vi har data, Grå om det är ett hål
-            const color = (t2 - t1 < GAP_THRESHOLD) ? '#48c774' : '#ddd';
+            if (diff > GAP_THRESHOLD) {
+                if (t1 > currentStart) {
+                    segments.push({ start: currentStart, end: t1, type: 'data' });
+                }
+                segments.push({ start: t1, end: t2, type: 'gap' });
+                
+                currentStart = t2;
+            }
             
-            // SKAPA HÅRT STOPP: Färg A börjar på P1, Färg A slutar på P2
-            // Nästa varv börjar Färg B på P2. CSS renderar detta som en direkt kant.
-            gradientStops.push(`${color} ${p1.toFixed(2)}%`);
-            gradientStops.push(`${color} ${p2.toFixed(2)}%`);
+            lastTime = t2;
+        }
+
+        if (lastTime > currentStart) {
+             segments.push({ start: currentStart, end: lastTime, type: 'data' });
+        }
+
+        if (lastTime < nowMs) {
+            segments.push({ start: lastTime, end: nowMs, type: 'gap' });
         }
         
-        // 3. Grått från sista punkten till 100%
-        const lastT = new Date(historyData[historyData.length-1].timestamp).getTime();
-        const lastPct = Math.max(0, Math.min(100, ((lastT - minMs) / totalDuration) * 100));
-            
-        gradientStops.push(`#ddd ${lastPct.toFixed(2)}%`);
-        gradientStops.push(`#ddd 100%`);
+        segments.forEach(seg => {
+            // Klipp segmenten mot vy-gränserna
+            const s = Math.max(minMs, Math.min(nowMs, seg.start));
+            const e = Math.max(minMs, Math.min(nowMs, seg.end));
 
-        // Applicera
-        gradientBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
-    }
+            if (s >= e) return;
 
-    function checkOverlapAndAdd(stopsArray, color, p1, p2) {
-        // Enkel variant: lägg bara till segmentet
-        stopsArray.push(`${color} ${p1.toFixed(1)}%, ${color} ${p2.toFixed(1)}%`);
+            const p1 = ((s - minMs) / totalDuration) * 100;
+            const p2 = ((e - minMs) / totalDuration) * 100;
+            const color = seg.type === 'data' ? '#48c774' : '#ddd';
+
+            gradientStops.push(`${color} ${p1.toFixed(2)}%`);
+            gradientStops.push(`${color} ${p2.toFixed(2)}%`);
+        });
+
+        if (gradientStops.length === 0) {
+             gradientBar.style.background = '#ddd';
+        } else {
+             gradientBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+        }
     }
 
     function findNearestDataPoint(targetTimeMs) {
@@ -728,7 +775,7 @@
     }
 
     function updateHistoryFromSlider(timestampVal) {
-        // När vi drar slidern letar vi upp närmaste punkten
+        // Att dra slidern letar upp närmaste punkten
         const targetTime = parseInt(timestampVal);
         const { point } = findNearestDataPoint(targetTime);
         if (point) {
@@ -751,7 +798,6 @@
         const slider = document.getElementById('history-slider');
         const currentVal = parseInt(slider.value);
         
-        // Hitta var vi är nu i arrayen
         const { index } = findNearestDataPoint(currentVal);
         
         if (index === -1) return;
@@ -784,8 +830,7 @@
         document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
         document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
 
-        // --- RITA VEKTOR (PIL) ---
-        // 1. Ta bort gammal vektor om den finns
+        //Ta bort gammal vektor om den finns
         if (historyVector) {
             historyLayerGroup.removeLayer(historyVector);
             historyVector = null;
@@ -794,8 +839,8 @@
         const speed = parseFloat(point.speed);
         const course = parseFloat(point.course);
 
-        // 2. Skapa ny vektor om fart finns och är > 0.5 knop
-        if (!isNaN(speed) && !isNaN(course) && speed > 0.5) {
+        //Skapa ny vektor om fart finns och är > 0.2 knop
+        if (!isNaN(speed) && !isNaN(course) && speed > 0.2) {
              const distance = speed * 100; // Samma skala som live-vyn
 
              const startPoint = L.latLng(point.latitude, point.longitude);
@@ -861,7 +906,6 @@
 
         allShips.forEach(shipName => {
             const message = shipLastUpdate[shipName] || {};
-            // if (!message) return;
 
             const isConsideredFixed = isFixed(shipName, message);
 
