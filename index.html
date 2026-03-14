@@ -94,6 +94,37 @@
 
     <div id="map"></div>
 
+    <div id="history-controls" class="box" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 90%; max-width: 600px;">
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
+            <h3 class="title is-5 is-marginless" id="history-title">Historik</h3>
+            <button class="button is-small is-danger" onclick="exitHistoryMode()">
+                <i class="fa-solid fa-times"></i>&nbsp;Stäng
+            </button>
+        </div>
+
+        <div class="field">
+            <label class="label" id="history-time-label">Tidpunkt</label>
+            <div class="control">
+                <input 
+                    id="history-slider" 
+                    class="slider is-fullwidth" 
+                    step="1" 
+                    min="0" 
+                    max="100" 
+                    value="100" 
+                    type="range"
+                    oninput="updateHistoryFromSlider(this.value)"
+                >
+            </div>
+        </div>
+        <div class="tags has-addons is-justify-content-center">
+            <span class="tag">Fart</span>
+            <span class="tag is-primary" id="history-speed">-</span>
+            <span class="tag">Kurs</span>
+            <span class="tag is-info" id="history-course">-</span>
+        </div>
+    </div>
+
 </body>
 
 <script>
@@ -263,6 +294,7 @@
         if (!message.coordinates || !message.name) return;
         // if (!message.legend && !message.navigationalStatus) return;
         const shipName = message.name.split(/[!\[]/)[0].trim();
+        const mmsi = message.mmsi || "";
 
         const infoHTML = `
             <table>
@@ -296,6 +328,14 @@
                     <tr>
                         <td>Senast sedd:</td>
                         <td>${new Date(message.lastSeen).toLocaleString("sv-se") || "-"}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: center; padding-top: 10px;">
+                            <button class="button is-small is-link is-outlined" onclick="loadShipHistory('${mmsi}', '${shipName}')">
+                                <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                                <span>Se 48h historik</span>
+                            </button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -436,6 +476,116 @@
             });
         });
     });
+
+    let historyData = [];
+    let historyLayerGroup = L.layerGroup();
+    let isHistoryMode = false;
+
+    const HISTORY_API_URL = "https://jumpgate.vassaro.net/ais/data/"; 
+
+    async function loadShipHistory(mmsi, shipName) {
+        if (!mmsi) {
+            alert("Inget MMSI hittades för detta fartyg.");
+            return;
+        }
+
+        isHistoryMode = true;
+
+        Object.values(shipMarkers).forEach(m => lfmap.removeLayer(m));
+        Object.values(shipVectors).forEach(v => lfmap.removeLayer(v));
+
+        lfmap.closePopup();
+
+        document.getElementById('history-title').innerText = `Laddar historik för ${formatName(shipName)}...`;
+        document.getElementById('history-controls').style.display = 'block';
+
+        try {
+            const response = await fetch(`${HISTORY_API_URL}${mmsi}`);
+            if (!response.ok) throw new Error("Kunde inte hämta data");
+
+            const data = await response.json();
+
+            // historyData = data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            if (historyData.length === 0) {
+                alert("Ingen historik hittades för de senaste 48 timmarna.");
+                exitHistoryMode();
+                return;
+            }
+
+            initializeHistoryMap(shipName);
+
+        } catch (error) {
+            console.error(error);
+            alert("Ett fel uppstod vid hämtning av historik.");
+            exitHistoryMode();
+        }
+    }
+
+    let historyMarker = null;
+    let historyPath = null;
+
+    function initializeHistoryMap(shipName) {
+        historyLayerGroup.addTo(lfmap);
+        document.getElementById('history-title').innerText = formatName(shipName);
+
+        const latlngs = historyData.map(d => [d.latitude, d.longitude]);
+
+        historyPath = L.polyline(latlngs, {
+            color: 'rgba(0, 54, 96, 0.5)',
+            weight: 3,
+            dashArray: '5, 10'
+        }).addTo(historyLayerGroup);
+
+        lfmap.fitBounds(historyPath.getBounds(), { padding: [50, 50] });
+
+        const lastPoint = historyData[historyData.length - 1]; // Senaste punkten
+
+        historyMarker = L.marker([lastPoint.latitude, lastPoint.longitude], {
+            icon: arrowIcon
+        }).addTo(historyLayerGroup);
+
+        const slider = document.getElementById('history-slider');
+        slider.min = 0;
+        slider.max = historyData.length - 1;
+        slider.value = historyData.length - 1;
+
+        updateHistoryUI(historyData.length - 1);
+    }
+
+    function updateHistoryFromSlider(index) {
+        index = parseInt(index);
+        updateHistoryUI(index);
+    }
+
+    function updateHistoryUI(index) {
+        const point = historyData[index];
+        if (!point) return;
+
+        const newLatLng = [point.latitude, point.longitude];
+        historyMarker.setLatLng(newLatLng);
+
+        if (point.course) {
+            historyMarker.setRotationAngle(point.course);
+        }
+
+        const date = new Date(point.timestamp);
+        document.getElementById('history-time-label').innerText = date.toLocaleString('sv-SE');
+        document.getElementById('history-speed').innerText = point.speed ? point.speed.toFixed(1) + " kn" : "-";
+        document.getElementById('history-course').innerText = point.course ? point.course + "°" : "-";
+    }
+
+    function exitHistoryMode() {
+        isHistoryMode = false;
+        historyData = [];
+
+        document.getElementById('history-controls').style.display = 'none';
+
+        historyLayerGroup.clearLayers();
+        historyLayerGroup.removeFrom(lfmap);
+        
+        redrawAllMarkers();
+    }
 
     function updateShipTable() {
         const shipTableBody = document.getElementById("shipTableBody");
