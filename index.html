@@ -102,6 +102,17 @@
             </button>
         </div>
 
+         <div class="is-flex is-justify-content-center is-align-items-center mb-3">
+            <span class="is-size-7 mr-2 has-text-weight-bold">48h</span>
+            <label class="custom-switch">
+                <input type="checkbox" id="historyDurationSwitch" checked onchange="updateSliderRange()">
+                <span class="custom-slider"></span>
+            </label>
+            <span class="is-size-7 ml-2 has-text-weight-bold">24h</span>
+        </div>
+
+        <div class="field">
+
         <div class="field">
             <div class="is-flex is-justify-content-space-between mb-1">
                 <label class="label" id="history-time-label">Tidpunkt</label>
@@ -309,8 +320,8 @@
     }
 
     function createMarker(message) {
+        if (isHistoryMode) return;
         if (!message.coordinates || !message.name) return;
-        // if (!message.legend && !message.navigationalStatus) return;
         const shipName = message.name.split(/[!\[]/)[0].trim();
         const mmsi = message.mmsi || "";
 
@@ -351,7 +362,7 @@
                         <td colspan="2" style="text-align: center; padding-top: 10px;">
                             <button class="button is-small is-link is-outlined" onclick="loadShipHistory('${mmsi}', '${shipName}')">
                                 <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
-                                <span>Se 48h historik</span>
+                                <span>Se Historik</span>
                             </button>
                         </td>
                     </tr>
@@ -498,6 +509,19 @@
     let historyData = [];
     let historyLayerGroup = L.layerGroup();
     let isHistoryMode = false;
+    let historyDurationHours = 48; 
+    let currentHistoryShipName = "";
+
+    function toggleHistoryDuration() {
+        // Kolla om switchen är på (48h) eller av (24h)
+        const is24h = document.getElementById('historyDurationSwitch').checked;
+        historyDurationHours = is24h ? 24 : 48;
+
+        // Rita om om vi är i history-läge
+        if (isHistoryMode && historyData.length > 0) {
+            initializeHistoryMap(currentHistoryShipName);
+        }
+    }
 
     const HISTORY_API_URL = "https://jumpgate.vassaro.net/ais/data/"; 
 
@@ -509,8 +533,7 @@
 
         isHistoryMode = true;
 
-        Object.values(shipMarkers).forEach(m => lfmap.removeLayer(m));
-        Object.values(shipVectors).forEach(v => lfmap.removeLayer(v));
+        redrawAllMarkers();
 
         lfmap.closePopup();
 
@@ -519,68 +542,44 @@
 
         try {
             const response = await fetch(`${HISTORY_API_URL}${mmsi}`);
-            // if (!response.ok) throw new Error("Kunde inte hämta data");
+            if (!response.ok) throw new Error("Kunde inte hämta data");
 
-            const data = await response.json();
+            let data = await response.json();
 
-            // historyData = data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            historyData = data.map(p => {
+                let ts = p.timestamp;
+                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
+                    ts += 'Z';
+                }
+                return { ...p, timestamp: ts };
+            }).filter(p => p.latitude != null && p.longitude != null);
 
             if (historyData.length === 0) {
-                alert("Ingen historik hittades för de senaste 48 timmarna.");
+                alert("Ingen historik hittades.");
                 exitHistoryMode();
                 return;
             }
 
+            currentHistoryShipName = shipName;
             initializeHistoryMap(shipName);
 
         } catch (error) {
             console.error(error);
             alert("Ett fel uppstod vid hämtning av historik.");
-
-            // --- TEST-DATA ---
-            const now = new Date();
-            historyData = [];
-            
-            // CENTRUM FÖR TESTRUTT (Norr om Grisslehamn)
-            const centerLat = 60.15;
-            const centerLng = 18.75;
-            
-            // Generera punkter för 48 timmar bakåt (en punkt var 15:e minut = 192 punkter)
-            const hoursBack = 48;
-            const pointsCount = 200; 
-            
-            for(let i=0; i < pointsCount; i++) {
-
-                if (i > 80 && i < 120) continue;
-                // Skapar en tidsserie från -48h fram till nu
-                const timeOffset = (pointsCount - 1 - i) * (hoursBack * 60 * 60 * 1000) / pointsCount;
-                const pointTime = new Date(now.getTime() - timeOffset);
-                
-                // Gör en snygg spiral/cirkel-rörelse
-                historyData.push({
-                    latitude: centerLat + Math.cos(i/10) * 0.08 + (i/5000), 
-                    longitude: centerLng + Math.sin(i/10) * 0.15 + (i/3000),
-                    speed: 8 + Math.random() * 4, // 8-12 knop
-                    course: (90 + (i * 5.8) % 360),
-                    timestamp: pointTime.toISOString()
-                });
-            }
-            
-            initializeHistoryMap(shipName + " (DEMO 48h)");
-            // --- --- //
-
-            // exitHistoryMode();
+            exitHistoryMode();
         }
     }
 
     let historyMarker = null;
     let historyPath = null;
+    let historyVector = null;
 
     function initializeHistoryMap(shipName) {
         historyLayerGroup.addTo(lfmap);
         document.getElementById('history-title').innerText = formatName(shipName);
+        historyLayerGroup.clearLayers();
 
-        const GAP_THRESHOLD = 60 * 60 * 1000; // Samma tröskel som slidern (1h)
+        const GAP_THRESHOLD = 60 * 60 * 1000;
         let segments = [];
         let currentSegment = [];
 
@@ -594,7 +593,7 @@
                 const nextLatLng = [historyData[i+1].latitude, historyData[i+1].longitude];
 
                 if (t2 - t1 > GAP_THRESHOLD) {
-                    // Hål upptäckt! Spara nuvarande segment och börja ett nytt
+                    // Spara nuvarande segment och börja ett nytt
                     segments.push(currentSegment);
                     currentSegment = [nextLatLng];
                 } else {
@@ -614,56 +613,96 @@
 
         lfmap.fitBounds(historyPath.getBounds(), { padding: [50, 50] });
 
-        const lastPoint = historyData[historyData.length - 1]; // Senaste punkten
+        const lastPoint = historyData.length > 0 ? historyData[historyData.length - 1] : null;
 
-        historyMarker = L.marker([lastPoint.latitude, lastPoint.longitude], {
-            icon: arrowIcon,
-            zIndexOffset: 1000
-        }).addTo(historyLayerGroup);
+        if (lastPoint) {
+            historyMarker = L.marker([lastPoint.latitude, lastPoint.longitude], {
+                icon: arrowIcon,
+                zIndexOffset: 1000
+            }).addTo(historyLayerGroup);
+        }
 
+        updateSliderRange();
+
+        if (lastPoint) {
+            const slider = document.getElementById('history-slider');
+            slider.value = new Date(lastPoint.timestamp).getTime();
+            updateHistoryUI_Render(lastPoint);
+        }
+    }
+
+    function updateSliderRange() {
+        // Kontrollera switchen
+        const is24h = document.getElementById('historyDurationSwitch').checked;
+        const durationHours = is24h ? 24 : 48;
+        
+        const nowMs = new Date().getTime();
+        const minMs = nowMs - (durationHours * 60 * 60 * 1000);
+        
         const slider = document.getElementById('history-slider');
         const gradientBar = document.getElementById('slider-gradient');
 
-        // Tidsaxel: Nu till Nu-48h (i millisekunder)
-        const nowMs = new Date().getTime();
-        const minMs = nowMs - (48 * 60 * 60 * 1000);
+        // Spara nuvarande värde
+        const currentValue = parseInt(slider.value);
 
+        // Uppdatera gränserna
         slider.min = minMs;
         slider.max = nowMs;
-        slider.value = nowMs;
 
-        let gradientStops = [];
+        // Om slidern hamnade utanför fönstret (för gammal tid), flytta fram den
+        if (currentValue < minMs) {
+            slider.value = minMs;
+            updateHistoryFromSlider(minMs);
+        }
+
+        // --- RITA NY BAKGRUNDSGRADIENT ---
+        if (historyData.length < 2) {
+            gradientBar.style.background = '#ddd';
+            return;
+        }
+
         const totalDuration = nowMs - minMs;
+        let gradientStops = [];
 
-        const firstPointTime = new Date(historyData[0].timestamp).getTime();
-        const startGapPct = ((firstPointTime - minMs) / totalDuration) * 100;
-        gradientStops.push(`#ddd 0%, #ddd ${startGapPct.toFixed(1)}%`);
+        const GAP_THRESHOLD = 60 * 60 * 1000;
 
+         const firstT = new Date(historyData[0].timestamp).getTime();
+        const firstPct = Math.max(0, Math.min(100, ((firstT - minMs) / totalDuration) * 100));
+        
+        // Lägg till start-block (Hårt stopp: #ddd 0% -> #ddd X%)
+        gradientStops.push(`#ddd 0%`); 
+        gradientStops.push(`#ddd ${firstPct.toFixed(2)}%`);
+
+        // 2. Loopa igenom alla segment
         for(let i = 0; i < historyData.length - 1; i++) {
             const t1 = new Date(historyData[i].timestamp).getTime();
             const t2 = new Date(historyData[i+1].timestamp).getTime();
             
-            const p1 = ((t1 - minMs) / totalDuration) * 100;
-            const p2 = ((t2 - minMs) / totalDuration) * 100;
+            // Skippa segment som ligger helt utanför vyn
+            if (t2 < minMs) continue;
+            if (t1 > nowMs) break;
 
-            if (t2 - t1 < GAP_THRESHOLD) {
-                // Giltigt intervall (Grönt / Accentfärg)
-                checkOverlapAndAdd(gradientStops, '#48c774', p1, p2); // Bulma Success Green
-            } else {
-                // Hål (Grått)
-                checkOverlapAndAdd(gradientStops, '#ddd', p1, p2); 
-            }
+            const p1 = Math.max(0, Math.min(100, ((t1 - minMs) / totalDuration) * 100));
+            const p2 = Math.max(0, Math.min(100, ((t2 - minMs) / totalDuration) * 100));
+
+            // Bestäm färg: Grön om vi har data, Grå om det är ett hål
+            const color = (t2 - t1 < GAP_THRESHOLD) ? '#48c774' : '#ddd';
+            
+            // SKAPA HÅRT STOPP: Färg A börjar på P1, Färg A slutar på P2
+            // Nästa varv börjar Färg B på P2. CSS renderar detta som en direkt kant.
+            gradientStops.push(`${color} ${p1.toFixed(2)}%`);
+            gradientStops.push(`${color} ${p2.toFixed(2)}%`);
         }
+        
+        // 3. Grått från sista punkten till 100%
+        const lastT = new Date(historyData[historyData.length-1].timestamp).getTime();
+        const lastPct = Math.max(0, Math.min(100, ((lastT - minMs) / totalDuration) * 100));
+            
+        gradientStops.push(`#ddd ${lastPct.toFixed(2)}%`);
+        gradientStops.push(`#ddd 100%`);
 
-        const lastPointTime = new Date(historyData[historyData.length-1].timestamp).getTime();
-        const endGapPct = ((lastPointTime - minMs) / totalDuration) * 100;
-        gradientStops.push(`#ddd ${endGapPct.toFixed(1)}%, #ddd 100%`);
-
-        // Sätt bakgrunden
+        // Applicera
         gradientBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
-
-        // Uppdatera UI direkt
-        updateHistoryUI(lastPointTime);
     }
 
     function checkOverlapAndAdd(stopsArray, color, p1, p2) {
@@ -744,6 +783,54 @@
 
         document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
         document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
+
+        // --- RITA VEKTOR (PIL) ---
+        // 1. Ta bort gammal vektor om den finns
+        if (historyVector) {
+            historyLayerGroup.removeLayer(historyVector);
+            historyVector = null;
+        }
+
+        const speed = parseFloat(point.speed);
+        const course = parseFloat(point.course);
+
+        // 2. Skapa ny vektor om fart finns och är > 0.5 knop
+        if (!isNaN(speed) && !isNaN(course) && speed > 0.5) {
+             const distance = speed * 100; // Samma skala som live-vyn
+
+             const startPoint = L.latLng(point.latitude, point.longitude);
+             const endPoint = L.GeometryUtil.destination(startPoint, course, distance);
+
+             const start = [point.latitude, point.longitude];
+             const end = [endPoint.lat, endPoint.lng];
+
+             historyVector = L.layerGroup();
+
+             // Svart outline (för synlighet)
+             historyVector.addLayer(L.polyline([start, end], {
+                 color: 'black',
+                 weight: 7,
+                 opacity: 1
+             }));
+
+             // Rosa linje
+             historyVector.addLayer(L.polyline([start, end], {
+                 color: '#D70077',
+                 weight: 3,
+                 opacity: 1
+             }));
+
+             // Cirkel i änden
+             historyVector.addLayer(L.circleMarker(end, {
+                 radius: 5,
+                 color: 'black',
+                 weight: 2,
+                 fillColor: '#D70077',
+                 fillOpacity: 1
+             }));
+             
+             historyVector.addTo(historyLayerGroup);
+        }
     }
 
     function updateHistoryUI(timeMs) {
