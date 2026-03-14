@@ -103,18 +103,36 @@
         </div>
 
         <div class="field">
-            <label class="label" id="history-time-label">Tidpunkt</label>
-            <div class="control">
-                <input 
-                    id="history-slider" 
-                    class="slider is-fullwidth" 
-                    step="1" 
-                    min="0" 
-                    max="100" 
-                    value="100" 
-                    type="range"
-                    oninput="updateHistoryFromSlider(this.value)"
-                >
+            <div class="is-flex is-justify-content-space-between mb-1">
+                <label class="label" id="history-time-label">Tidpunkt</label>
+                <span class="tag is-light">Nu</span>
+            </div>
+            
+            <div class="control" style="width: 100%; display: flex; align-items: center; gap: 10px;">
+                <button class="button is-small" onclick="stepHistory(-1)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+
+                <!-- Slider Container -->
+                <div style="position: relative; flex-grow: 1; height: 24px; display: flex; align-items: center;">
+                    <!-- Bakgrundsgrafik för data/hål -->
+                    <div id="slider-gradient" style="position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: #eee; width: 100%; top: 50%; transform: translateY(-50%);"></div>
+                    
+                    <!-- Själva slidern (osynlig bakgrund) -->
+                    <input 
+                        id="history-slider" 
+                        class="slider" 
+                        style="width: 100%; position: absolute; background: transparent; -webkit-appearance: none; margin: 0; cursor: pointer;"
+                        step="1" 
+                        type="range"
+                        oninput="updateHistoryFromSlider(this.value)"
+                        onchange="snapHistorySlider(this.value)"
+                    >
+                </div>
+
+                <button class="button is-small" onclick="stepHistory(1)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
             </div>
         </div>
         <div class="tags has-addons is-justify-content-center">
@@ -501,7 +519,7 @@
 
         try {
             const response = await fetch(`${HISTORY_API_URL}${mmsi}`);
-            if (!response.ok) throw new Error("Kunde inte hämta data");
+            // if (!response.ok) throw new Error("Kunde inte hämta data");
 
             const data = await response.json();
 
@@ -518,7 +536,40 @@
         } catch (error) {
             console.error(error);
             alert("Ett fel uppstod vid hämtning av historik.");
-            exitHistoryMode();
+
+            // --- TEST-DATA ---
+            const now = new Date();
+            historyData = [];
+            
+            // CENTRUM FÖR TESTRUTT (Norr om Grisslehamn)
+            const centerLat = 60.15;
+            const centerLng = 18.75;
+            
+            // Generera punkter för 48 timmar bakåt (en punkt var 15:e minut = 192 punkter)
+            const hoursBack = 48;
+            const pointsCount = 200; 
+            
+            for(let i=0; i < pointsCount; i++) {
+
+                if (i > 80 && i < 120) continue;
+                // Skapar en tidsserie från -48h fram till nu
+                const timeOffset = (pointsCount - 1 - i) * (hoursBack * 60 * 60 * 1000) / pointsCount;
+                const pointTime = new Date(now.getTime() - timeOffset);
+                
+                // Gör en snygg spiral/cirkel-rörelse
+                historyData.push({
+                    latitude: centerLat + Math.cos(i/10) * 0.08 + (i/5000), 
+                    longitude: centerLng + Math.sin(i/10) * 0.15 + (i/3000),
+                    speed: 8 + Math.random() * 4, // 8-12 knop
+                    course: (90 + (i * 5.8) % 360),
+                    timestamp: pointTime.toISOString()
+                });
+            }
+            
+            initializeHistoryMap(shipName + " (DEMO 48h)");
+            // --- --- //
+
+            // exitHistoryMode();
         }
     }
 
@@ -529,10 +580,34 @@
         historyLayerGroup.addTo(lfmap);
         document.getElementById('history-title').innerText = formatName(shipName);
 
-        const latlngs = historyData.map(d => [d.latitude, d.longitude]);
+        const GAP_THRESHOLD = 60 * 60 * 1000; // Samma tröskel som slidern (1h)
+        let segments = [];
+        let currentSegment = [];
 
-        historyPath = L.polyline(latlngs, {
-            color: 'rgba(0, 54, 96, 0.5)',
+        if (historyData.length > 0) {
+            // Starta första segmentet
+            currentSegment.push([historyData[0].latitude, historyData[0].longitude]);
+
+            for (let i = 0; i < historyData.length - 1; i++) {
+                const t1 = new Date(historyData[i].timestamp).getTime();
+                const t2 = new Date(historyData[i+1].timestamp).getTime();
+                const nextLatLng = [historyData[i+1].latitude, historyData[i+1].longitude];
+
+                if (t2 - t1 > GAP_THRESHOLD) {
+                    // Hål upptäckt! Spara nuvarande segment och börja ett nytt
+                    segments.push(currentSegment);
+                    currentSegment = [nextLatLng];
+                } else {
+                    // Inget hål, fortsätt rita
+                    currentSegment.push(nextLatLng);
+                }
+            }
+            // Glöm inte spara det sista segmentet
+            segments.push(currentSegment);
+        }
+
+        historyPath = L.polyline(segments, {
+            color: 'rgba(0, 54, 96, 0.4)',
             weight: 3,
             dashArray: '5, 10'
         }).addTo(historyLayerGroup);
@@ -542,37 +617,138 @@
         const lastPoint = historyData[historyData.length - 1]; // Senaste punkten
 
         historyMarker = L.marker([lastPoint.latitude, lastPoint.longitude], {
-            icon: arrowIcon
+            icon: arrowIcon,
+            zIndexOffset: 1000
         }).addTo(historyLayerGroup);
 
         const slider = document.getElementById('history-slider');
-        slider.min = 0;
-        slider.max = historyData.length - 1;
-        slider.value = historyData.length - 1;
+        const gradientBar = document.getElementById('slider-gradient');
 
-        updateHistoryUI(historyData.length - 1);
+        // Tidsaxel: Nu till Nu-48h (i millisekunder)
+        const nowMs = new Date().getTime();
+        const minMs = nowMs - (48 * 60 * 60 * 1000);
+
+        slider.min = minMs;
+        slider.max = nowMs;
+        slider.value = nowMs;
+
+        let gradientStops = [];
+        const totalDuration = nowMs - minMs;
+
+        const firstPointTime = new Date(historyData[0].timestamp).getTime();
+        const startGapPct = ((firstPointTime - minMs) / totalDuration) * 100;
+        gradientStops.push(`#ddd 0%, #ddd ${startGapPct.toFixed(1)}%`);
+
+        for(let i = 0; i < historyData.length - 1; i++) {
+            const t1 = new Date(historyData[i].timestamp).getTime();
+            const t2 = new Date(historyData[i+1].timestamp).getTime();
+            
+            const p1 = ((t1 - minMs) / totalDuration) * 100;
+            const p2 = ((t2 - minMs) / totalDuration) * 100;
+
+            if (t2 - t1 < GAP_THRESHOLD) {
+                // Giltigt intervall (Grönt / Accentfärg)
+                checkOverlapAndAdd(gradientStops, '#48c774', p1, p2); // Bulma Success Green
+            } else {
+                // Hål (Grått)
+                checkOverlapAndAdd(gradientStops, '#ddd', p1, p2); 
+            }
+        }
+
+        const lastPointTime = new Date(historyData[historyData.length-1].timestamp).getTime();
+        const endGapPct = ((lastPointTime - minMs) / totalDuration) * 100;
+        gradientStops.push(`#ddd ${endGapPct.toFixed(1)}%, #ddd 100%`);
+
+        // Sätt bakgrunden
+        gradientBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+        // Uppdatera UI direkt
+        updateHistoryUI(lastPointTime);
     }
 
-    function updateHistoryFromSlider(index) {
-        index = parseInt(index);
-        updateHistoryUI(index);
+    function checkOverlapAndAdd(stopsArray, color, p1, p2) {
+        // Enkel variant: lägg bara till segmentet
+        stopsArray.push(`${color} ${p1.toFixed(1)}%, ${color} ${p2.toFixed(1)}%`);
     }
 
-    function updateHistoryUI(index) {
-        const point = historyData[index];
-        if (!point) return;
+    function findNearestDataPoint(targetTimeMs) {
+        let nearest = null;
+        let minDiff = Infinity;
+        let index = -1;
+
+        for (let i = 0; i < historyData.length; i++) {
+            const time = new Date(historyData[i].timestamp).getTime();
+            const diff = Math.abs(time - targetTimeMs);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearest = historyData[i];
+                index = i;
+            }
+        }
+        return { point: nearest, index: index };
+    }
+
+    function updateHistoryFromSlider(timestampVal) {
+        // När vi drar slidern letar vi upp närmaste punkten
+        const targetTime = parseInt(timestampVal);
+        const { point } = findNearestDataPoint(targetTime);
+        if (point) {
+            updateHistoryUI_Render(point);
+        }
+    }
+
+    window.snapHistorySlider = function(timestampVal) {
+        const targetTime = parseInt(timestampVal);
+        const { point } = findNearestDataPoint(targetTime);
+
+        if (point) {
+            const snapTime = new Date(point.timestamp).getTime();
+            document.getElementById('history-slider').value = snapTime;
+            updateHistoryUI_Render(point);
+        }
+    }
+
+    function stepHistory(direction) {
+        const slider = document.getElementById('history-slider');
+        const currentVal = parseInt(slider.value);
+        
+        // Hitta var vi är nu i arrayen
+        const { index } = findNearestDataPoint(currentVal);
+        
+        if (index === -1) return;
+
+        // Hoppa till nästa/föregående index
+        let newIndex = index + direction;
+        
+        if (newIndex < 0) newIndex = 0;
+        if (newIndex >= historyData.length) newIndex = historyData.length - 1;
+        
+        const newPoint = historyData[newIndex];
+        const newTime = new Date(newPoint.timestamp).getTime();
+        
+        // Flytta slidern och kartan
+        slider.value = newTime;
+        updateHistoryUI_Render(newPoint);
+    }
+
+    function updateHistoryUI_Render(point) {
+        const dateStr = new Date(point.timestamp).toLocaleString('sv-SE');
+        document.getElementById('history-time-label').innerText = dateStr;
 
         const newLatLng = [point.latitude, point.longitude];
         historyMarker.setLatLng(newLatLng);
 
-        if (point.course) {
+        if (point.course !== undefined) {
             historyMarker.setRotationAngle(point.course);
         }
 
-        const date = new Date(point.timestamp);
-        document.getElementById('history-time-label').innerText = date.toLocaleString('sv-SE');
-        document.getElementById('history-speed').innerText = point.speed ? point.speed.toFixed(1) + " kn" : "-";
-        document.getElementById('history-course').innerText = point.course ? point.course + "°" : "-";
+        document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
+        document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
+    }
+
+    function updateHistoryUI(timeMs) {
+        const { point } = findNearestDataPoint(timeMs);
+        if(point) updateHistoryUI_Render(point);
     }
 
     function exitHistoryMode() {
