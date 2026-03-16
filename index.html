@@ -94,21 +94,31 @@
 
     <div id="map"></div>
 
+    <div id="history-duration-modal" class="modal">
+        <div class="modal-background" onclick="closeDurationModal()"></div>
+        <div class="modal-content">
+            <div class="box has-text-centered">
+                <h3 class="title is-5 mb-2">Välj tidsintervall</h3>
+                <p class="mb-4">Hur lång historik vill du ladda för <strong id="modal-ship-name"></strong>?</p>
+                <div class="buttons is-centered">
+                    <button class="button is-link" onclick="startHistoryLoading('12h')">12h</button>
+                    <button class="button is-link" onclick="startHistoryLoading('24h')">24h</button>
+                    <button class="button is-link" onclick="startHistoryLoading('48h')">48h</button>
+                </div>
+                <div class="buttons is-centered">
+                    <button class="button is-warning is-light" onclick="startHistoryLoading('exact')">Exakt data 48h (Kan ta längre tid)</button>
+                </div>
+            </div>
+        </div>
+        <button class="modal-close is-large" aria-label="close" onclick="closeDurationModal()"></button>
+    </div>
+
     <div id="history-controls" class="box" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 90%; max-width: 600px;">
         <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
             <h3 class="title is-5 is-marginless" id="history-title">Historik</h3>
             <button class="button is-small is-danger" onclick="exitHistoryMode()">
                 <i class="fa-solid fa-times"></i>&nbsp;Stäng
             </button>
-        </div>
-
-         <div class="is-flex is-justify-content-center is-align-items-center mb-3">
-            <span class="is-size-7 mr-2 has-text-weight-bold">48h</span>
-            <label class="custom-switch">
-                <input type="checkbox" id="historyDurationSwitch" checked onchange="toggleHistoryDuration()">
-                <span class="custom-slider"></span>
-            </label>
-            <span class="is-size-7 ml-2 has-text-weight-bold">24h</span>
         </div>
 
         <div class="field">
@@ -129,7 +139,7 @@
                     <!-- Bakgrundsgrafik för data/hål -->
                     <div id="slider-gradient" style="position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: #eee; width: 100%; top: 50%; transform: translateY(-50%);"></div>
                     
-                    <!-- Själva slidern (osynlig bakgrund) -->
+                    <!-- Slider -->
                     <input 
                         id="history-slider" 
                         class="slider" 
@@ -370,7 +380,7 @@
                     </tr>
                     <tr>
                         <td colspan="2" style="text-align: center; padding-top: 10px;">
-                            <button class="button is-small is-link is-outlined" onclick="loadShipHistory('${mmsi}', '${shipName}')">
+                            <button class="button is-small is-link is-outlined" onclick="promptHistoryDuration('${mmsi}', '${shipName}')">
                                 <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
                                 <span>Se Historik</span>
                             </button>
@@ -421,12 +431,12 @@
             if (shipMarkers[shipName]) {
                 shipMarkers[shipName]
                     .setLatLng(message.coordinates)
-                    .setRotationAngle(message.course || 0)
+                    .setRotationAngle(isConsideredFixed ? 0 : (message.course || 0))
                     .setIcon(currentIcon)
                     .setPopupContent(currentHTML)
             } else {
                 const marker = L.marker(message.coordinates, {
-                    rotationAngle: message.course || 0,
+                    rotationAngle: isConsideredFixed ? 0 : (message.course || 0),
                     icon: currentIcon
                 });
                 marker.bindPopup(currentHTML, {
@@ -521,45 +531,64 @@
     let isHistoryMode = false;
     let currentHistoryShipName = "";
 
-    function toggleHistoryDuration() {
-        const is24h = document.getElementById('historyDurationSwitch').checked;
-        historyDurationHours = is24h ? 24 : 48;
+    let historyDurationHours = 12;
+    let pendingHistoryMmsi = null;
+    let pendingHistoryShipName = "";
 
-        if (isHistoryMode && historyData.length > 0) {
-            // Spara nuvarande tid från slidern
-            const slider = document.getElementById('history-slider');
-            const currentTime = slider ? parseInt(slider.value) : null;
-            
-            // Skicka med tiden till funktionen
-            initializeHistoryMap(currentHistoryShipName, currentTime);
-        }
+    const GAP_THRESHOLD = 30 * 60 * 1000; // 30 minuter
+
+    function getHistoryCutoffTime() {
+        return Date.now() - (historyDurationHours * 60 * 60 * 1000);
     }
 
-    const HISTORY_API_URL = "https://jumpgate.vassaro.net/ais/data/"; 
-
-    async function loadShipHistory(mmsi, shipName) {
+    function promptHistoryDuration(mmsi, shipName) {
         if (!mmsi) {
             alert("Inget MMSI hittades för detta fartyg.");
             return;
         }
-
-        isHistoryMode = true;
-
-        redrawAllMarkers();
-
+        pendingHistoryMmsi = mmsi;
+        pendingHistoryShipName = shipName;
+        document.getElementById('modal-ship-name').innerText = formatName(shipName);
+        document.getElementById('history-duration-modal').classList.add('is-active');
         lfmap.closePopup();
+    }
+
+    function closeDurationModal() {
+        document.getElementById('history-duration-modal').classList.remove('is-active');
+    }
+
+    function startHistoryLoading(durationStr) {
+        closeDurationModal();
+        if (durationStr === 'exact') {
+            historyDurationHours = 48;
+        } else {
+            historyDurationHours = parseInt(durationStr.replace('h', ''));
+        }
+        loadShipHistory(pendingHistoryMmsi, pendingHistoryShipName, durationStr);
+    }
+
+    async function loadShipHistory(mmsi, shipName, durationStr) {
+        isHistoryMode = true;
+        redrawAllMarkers();
 
         document.getElementById('history-title').innerText = `Laddar historik för ${formatName(shipName)}...`;
         document.getElementById('history-controls').style.display = 'block';
 
         try {
-            const response = await fetch(`${HISTORY_API_URL}${mmsi}`);
+            let url;
+            if (durationStr === 'exact') {
+                url = `https://jumpgate.vassaro.net/ais/data/${mmsi}`;
+            } else {
+                url = `https://jumpgate.vassaro.net/ais/data/${durationStr}/${mmsi}`;
+            }
+            
+            const response = await fetch(url);
             if (!response.ok) throw new Error("Kunde inte hämta data");
 
             let data = await response.json();
 
             historyData = data.map(p => {
-                let ts = p.timestamp;
+                let ts = p.timestamp || p.minute;
                 if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
                     ts += 'Z';
                 }
@@ -587,13 +616,11 @@
         document.getElementById('history-title').innerText = formatName(shipName);
         historyLayerGroup.clearLayers();
 
-        const is24h = document.getElementById('historyDurationSwitch').checked;
-        const durationHours = is24h ? 24 : 48;
-        const cutoffTime = Date.now() - (durationHours * 60 * 60 * 1000);
+        const durationHours = historyDurationHours;
+        const cutoffTime = getHistoryCutoffTime();;
 
         const visibleData = historyData.filter(p => new Date(p.timestamp).getTime() >= cutoffTime);
 
-        const GAP_THRESHOLD = 60 * 60 * 1000;
         let segments = [];
         let currentSegment = [];
 
@@ -659,8 +686,8 @@
 
     function updateSliderRange() {
         // Kontrollera switchen
-        const is24h = document.getElementById('historyDurationSwitch').checked;
-        const durationHours = is24h ? 24 : 48;
+        const durationHours = historyDurationHours;
+        const cutoffTime = getHistoryCutoffTime();
         
         const nowMs = new Date().getTime();
         const minMs = nowMs - (durationHours * 60 * 60 * 1000);
@@ -687,16 +714,12 @@
 
         const totalDuration = nowMs - minMs;
         let gradientStops = [];
-        const GAP_THRESHOLD = 60 * 60 * 1000; // 1 timme
 
-        // Bygger lista med segment: {Start, End, Type='data'|'gap'}
         let segments = [];
 
-        // Hitta startpunkt för första datasegmentet
         let currentStart = new Date(historyData[0].timestamp).getTime();
         let lastTime = currentStart;
 
-        // Om första punkten är senare än minMs, börja med ett gap
         if (currentStart > minMs) {
             segments.push({ start: minMs, end: currentStart, type: 'gap' });
         }
@@ -955,7 +978,7 @@
 
     function isFixed(shipName, message) {
         const isRefPoint = shipName.toUpperCase().includes("REF POINT");
-        const isStationary = (!message.speed || message.speed === 0) && !message.course 
+        const isStationary = (!message.speed || message.speed === 0)
                 && message.legend == "Unspecified" && message.navigationalStatus == "Not defined (default)";
         const isRock = shipName.toUpperCase().includes("GRUND")
         const isVartan = shipName.toUpperCase().includes("VARTAN")
