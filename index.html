@@ -59,6 +59,12 @@
                                 <span class="custom-slider"></span>
                             </label>Visa fasta punkter
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center">
+                            <label class="custom-switch">
+                                <input type="checkbox" id="showOfflineBoatsSwitch">
+                                <span class="custom-slider"></span>
+                            </label>Visa offline Vässaröfartyg
+                        </div>
                         <div class="navbar-item">
                             <div class="table-container" style="max-height: 500px; overflow: scroll;">
                                 <table class="table is-striped is-fullwidth">
@@ -204,6 +210,8 @@
 
     let showAllShips = false;
     let showStationary = false;
+    let showOfflineBoats = false;
+    const offlineBoats = new Set();
 
     document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
         showAllShips = event.target.checked;
@@ -212,6 +220,11 @@
 
     document.getElementById('showStationarySwitch').addEventListener('change', function (event) {
         showStationary = event.target.checked;
+        redrawAllMarkers();
+    });
+
+    document.getElementById('showOfflineBoatsSwitch').addEventListener('change', function (event) {
+        showOfflineBoats = event.target.checked;
         redrawAllMarkers();
     });
 
@@ -250,6 +263,40 @@
     let historyPath = null;
     let historyVector = null;
 
+    async function fetchLatestAndAddOfflineBoats() {
+        try {
+            const response = await fetch('https://jumpgate.vassaro.net/ais/data/latest');
+            if (!response.ok) return;
+            const vessels = await response.json();
+
+            vessels.forEach(vessel => {
+                const mmsiStr = String(Math.round(parseFloat(vessel.mmsi) || 0));
+                const shipName = MMSI_NAME_MAP[mmsiStr];
+                if (!shipName) return;
+                if (shipLastUpdate[shipName]) return;
+                if ((vessel.speed || 0) >= 0.5) return;
+                if (vessel.latitude == null || vessel.longitude == null) return;
+
+                let ts = vessel.timestamp;
+                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) ts += 'Z';
+
+                const message = {
+                    name: shipName,
+                    mmsi: vessel.mmsi,
+                    coordinates: [vessel.latitude, vessel.longitude],
+                    speed: vessel.speed || 0,
+                    course: vessel.course || 0,
+                    lastSeen: ts ? new Date(ts) : null
+                };
+                offlineBoats.add(shipName);
+                shipLastUpdate[shipName] = message;
+                createMarker(message);
+            });
+        } catch (e) {
+            console.error('Failed to fetch latest positions:', e);
+        }
+    }
+
     ws.onmessage = (event) => {
         if (event.data.startsWith('42["vesselPositions-init"')) {
             const vessels = JSON.parse(event.data.toString().slice(2))[1];
@@ -262,6 +309,7 @@
                     shipLastUpdate[shipName] = message;
                 }
             });
+            fetchLatestAndAddOfflineBoats();
         } else {
             const message = JSON.parse(event.data.toString().slice(2))[1];
             const shipName = message.name && message.name.trim();
@@ -324,8 +372,14 @@
             .addTo(lfmap);
     });
 
-    // CREATE MARKERS, filtered by this array
-    const TRACKED_SHIPS = ["VIGGEN", "MASEN"];
+    // CREATE MARKERS, filtered by MMSI
+    const MMSI_NAME_MAP = {
+        "265759010": "VIGGEN",
+        "265575820": "MASEN",
+        "265575840": "GRISSLAN VASSARO",
+        "265060020": "BULLRET VASSARO",
+        "265672200": "TARNAN VASSARO"
+    };
 
     var shipMarkers = {};
 
@@ -409,11 +463,13 @@
         
 
         const isConsideredFixed = isFixed(shipName, message);
+        const mmsiStr = String(Math.round(parseFloat(mmsi) || 0));
+        if (offlineBoats.has(shipName) && !showOfflineBoats) return;
 
         if (
             (
                 showAllShips ||
-                TRACKED_SHIPS.includes(shipName) ||
+                mmsiStr in MMSI_NAME_MAP ||
                 shipName.toUpperCase().includes("RESCUE") ||
                 shipName.toUpperCase().includes("VASSARO") ||
                 isConsideredFixed
@@ -606,7 +662,7 @@
 
         } catch (error) {
             console.error(error);
-            alert("Ett fel uppstod vid hämtning av historik.");
+            alert("Hittade ingen historik.");
             exitHistoryMode();
         }
     }
