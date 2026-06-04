@@ -237,7 +237,7 @@
        } else {
            document.documentElement.style.setProperty('--accent-color', '#003660');
            if (historyPath) {
-               historyPath.setStyle({ color: 'rgba(0, 54, 96, 0.4)' });
+               historyPath.setStyle({ color: 'rgba(0, 110, 0, 0.4)' });
            } 
        }
     });
@@ -703,7 +703,7 @@
         }
 
         const isSatellite = lfmap.hasLayer(BASEMAPS.Satellit);
-        const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 54, 96, 0.4)';
+        const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 110, 0, 0.4)';
         
         historyPath = L.polyline(segments, {
             color: pathColor,
