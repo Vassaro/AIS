@@ -45,6 +45,18 @@ I historikläge visas:
 - Fart och kurs för varje position
 - Datahål (ex. när sändaren inte nåddes) markeras gråa i slidern
 
+#### Uppspelning
+En **play-knapp** låter dig spela upp rutten automatiskt position för position. Ikonen växlar mellan play och paus. Fyra intervalltider väljs under slidern:
+
+| Intervall | Hastighet |
+|-----------|-----------|
+| 0.1 s | Mycket snabb |
+| 0.5 s | Snabb |
+| 1 s | Normal (standard) |
+| 2 s | Långsam |
+
+Uppspelningen stannar automatiskt vid ett datahål eller vid ruttslutet. Att dra i slidern eller klicka på pil-knapparna stoppar uppspelningen.
+
 ### Kartlager
 - **OpenStreetMap** – standardvy
 - **Satellit** – flygfoto via Esri/Maxar
