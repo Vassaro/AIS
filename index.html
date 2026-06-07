@@ -61,7 +61,7 @@
                         </div>
                         <div class="navbar-item is-flex is-align-items-center">
                             <label class="custom-switch">
-                                <input type="checkbox" id="showOfflineBoatsSwitch">
+                                <input type="checkbox" id="showOfflineBoatsSwitch" checked>
                                 <span class="custom-slider"></span>
                             </label>Visa offline Vässaröfartyg
                         </div>
@@ -217,7 +217,7 @@
 
     let showAllShips = false;
     let showStationary = false;
-    let showOfflineBoats = false;
+    let showOfflineBoats = true;
     const offlineBoats = new Set();
 
     document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
