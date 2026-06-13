@@ -75,4 +75,4 @@ Sjömilsskala visas alltid i nedre högra hörnet.
 | Data | WebSocket + REST API via `jumpgate.vassaro.net` |
 
 ## Kom igång
-Sidan nås [här](https://jr3hn.github.io/AIS).
+Sidan nås [här](https://vassaro.github.io/AIS).
