@@ -59,6 +59,12 @@
                                 <span class="custom-slider"></span>
                             </label>Visa fasta punkter
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center">
+                            <label class="custom-switch">
+                                <input type="checkbox" id="showOfflineBoatsSwitch" checked>
+                                <span class="custom-slider"></span>
+                            </label>Visa offline Vässaröfartyg
+                        </div>
                         <div class="navbar-item">
                             <div class="table-container" style="max-height: 500px; overflow: scroll;">
                                 <table class="table is-striped is-fullwidth">
@@ -80,7 +86,7 @@
                             <div class="content">
                                 <p>
                                     Den här hemsidan bor på
-                                    <a href="https://github.com/JR3hn/AIS">
+                                    <a href="https://github.com/vassaro/AIS">
                                         Github <i class="fa-brands fa-github"></i>
                                     </a>
                                 </p>
@@ -93,6 +99,83 @@
     </nav>
 
     <div id="map"></div>
+
+    <div id="history-duration-modal" class="modal">
+        <div class="modal-background" onclick="closeDurationModal()"></div>
+        <div class="modal-content">
+            <div class="box has-text-centered">
+                <h3 class="title is-5 mb-2">Välj tidsintervall</h3>
+                <p class="mb-4">Hur lång historik vill du ladda för <strong id="modal-ship-name"></strong>?</p>
+                <div class="buttons is-centered">
+                    <button class="button is-link" onclick="startHistoryLoading('12h')">12h</button>
+                    <button class="button is-link" onclick="startHistoryLoading('24h')">24h</button>
+                    <button class="button is-link" onclick="startHistoryLoading('48h')">48h</button>
+                </div>
+                <div class="buttons is-centered">
+                    <button class="button is-warning is-light" onclick="startHistoryLoading('exact')">Exakt data 48h (Kan ta längre tid)</button>
+                </div>
+            </div>
+        </div>
+        <button class="modal-close is-large" aria-label="close" onclick="closeDurationModal()"></button>
+    </div>
+
+    <div id="history-controls" class="box" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 90%; max-width: 600px;">
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
+            <h3 class="title is-5 is-marginless" id="history-title">Historik</h3>
+            <button class="button is-small is-danger" onclick="exitHistoryMode()">
+                <i class="fa-solid fa-times"></i>&nbsp;Stäng
+            </button>
+        </div>
+
+        <div class="field">
+
+        <div class="field">
+            <div class="is-flex is-justify-content-space-between mb-1">
+                <label class="label" id="history-time-label">Tidpunkt</label>
+                <span class="tag is-light">Nu</span>
+            </div>
+            
+            <div class="control" style="width: 100%; display: flex; align-items: center; gap: 10px;">
+                <button class="button is-small" onclick="stopPlayback(); stepHistory(-1)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+
+                <!-- Slider Container -->
+                <div style="position: relative; flex-grow: 1; height: 24px; display: flex; align-items: center;">
+                    <!-- Bakgrundsgrafik för data/hål -->
+                    <div id="slider-gradient" style="position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: #eee; width: 100%; top: 50%; transform: translateY(-50%);"></div>
+
+                    <!-- Slider -->
+                    <input
+                        id="history-slider"
+                        class="slider"
+                        style="width: 100%; position: absolute; background: transparent; -webkit-appearance: none; appearance: none; margin: 0; cursor: pointer;"
+                        step="1"
+                        type="range"
+                        oninput="stopPlayback(); updateHistoryFromSlider(this.value)"
+                        onchange="snapHistorySlider(this.value)"
+                    >
+                </div>
+
+                <button class="button is-small" onclick="stopPlayback(); stepHistory(1)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button class="button is-small is-primary" id="play-button" onclick="togglePlayback()">
+                    <i class="fa-solid fa-play" id="play-icon"></i>
+                </button>
+            </div>
+            <div class="is-flex is-align-items-center is-justify-content-center mt-2" style="gap: 6px;">
+                <span class="is-size-7 has-text-grey">Intervall:</span>
+                <div id="speed-buttons" class="tags mb-0" style="gap: 4px;"></div>
+            </div>
+        </div>
+        <div class="tags has-addons is-justify-content-center">
+            <span class="tag">Fart</span>
+            <span class="tag is-primary" id="history-speed">-</span>
+            <span class="tag">Kurs</span>
+            <span class="tag is-info" id="history-course">-</span>
+        </div>
+    </div>
 
 </body>
 
@@ -134,6 +217,8 @@
 
     let showAllShips = false;
     let showStationary = false;
+    let showOfflineBoats = true;
+    const offlineBoats = new Set();
 
     document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
         showAllShips = event.target.checked;
@@ -145,11 +230,22 @@
         redrawAllMarkers();
     });
 
+    document.getElementById('showOfflineBoatsSwitch').addEventListener('change', function (event) {
+        showOfflineBoats = event.target.checked;
+        redrawAllMarkers();
+    });
+
     lfmap.on('baselayerchange', function (e) {
        if (e.name === 'Satellit') {
-           document.documentElement.style.setProperty('--accent-color', '#e1e1e1'); 
+           document.documentElement.style.setProperty('--accent-color', '#e1e1e1');
+           if (historyPath) {
+               historyPath.setStyle({ color: 'rgba(255, 255, 255, 0.4)' });
+           } 
        } else {
-           document.documentElement.style.setProperty('--accent-color', '#003660'); 
+           document.documentElement.style.setProperty('--accent-color', '#003660');
+           if (historyPath) {
+               historyPath.setStyle({ color: 'rgba(0, 110, 0, 0.4)' });
+           } 
        }
     });
 
@@ -170,6 +266,44 @@
 
     var shipLastUpdate = {};
 
+    let historyMarker = null;
+    let historyPath = null;
+    let historyVector = null;
+
+    async function fetchLatestAndAddOfflineBoats() {
+        try {
+            const response = await fetch('https://jumpgate.vassaro.net/ais/data/latest');
+            if (!response.ok) return;
+            const vessels = await response.json();
+
+            vessels.forEach(vessel => {
+                const mmsiStr = String(Math.round(parseFloat(vessel.mmsi) || 0));
+                const shipName = MMSI_NAME_MAP[mmsiStr];
+                if (!shipName) return;
+                if (shipLastUpdate[shipName]) return;
+                if ((vessel.speed || 0) >= 0.5) return;
+                if (vessel.latitude == null || vessel.longitude == null) return;
+
+                let ts = vessel.timestamp;
+                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) ts += 'Z';
+
+                const message = {
+                    name: shipName,
+                    mmsi: vessel.mmsi,
+                    coordinates: [vessel.latitude, vessel.longitude],
+                    speed: vessel.speed || 0,
+                    course: vessel.course || 0,
+                    lastSeen: ts ? new Date(ts) : null
+                };
+                offlineBoats.add(shipName);
+                shipLastUpdate[shipName] = message;
+                createMarker(message);
+            });
+        } catch (e) {
+            console.error('Failed to fetch latest positions:', e);
+        }
+    }
+
     ws.onmessage = (event) => {
         if (event.data.startsWith('42["vesselPositions-init"')) {
             const vessels = JSON.parse(event.data.toString().slice(2))[1];
@@ -182,6 +316,7 @@
                     shipLastUpdate[shipName] = message;
                 }
             });
+            fetchLatestAndAddOfflineBoats();
         } else {
             const message = JSON.parse(event.data.toString().slice(2))[1];
             const shipName = message.name && message.name.trim();
@@ -244,8 +379,14 @@
             .addTo(lfmap);
     });
 
-    // CREATE MARKERS, filtered by this array
-    const TRACKED_SHIPS = ["VIGGEN", "MASEN"];
+    // CREATE MARKERS, filtered by MMSI
+    const MMSI_NAME_MAP = {
+        "265759010": "VIGGEN",
+        "265575820": "MASEN",
+        "265575840": "GRISSLAN VASSARO",
+        "265060020": "BULLRET VASSARO",
+        "265672200": "TARNAN VASSARO"
+    };
 
     var shipMarkers = {};
 
@@ -260,9 +401,10 @@
     }
 
     function createMarker(message) {
+        if (isHistoryMode) return;
         if (!message.coordinates || !message.name) return;
-        // if (!message.legend && !message.navigationalStatus) return;
         const shipName = message.name.split(/[!\[]/)[0].trim();
+        const mmsi = message.mmsi || "";
 
         const infoHTML = `
             <table>
@@ -297,6 +439,14 @@
                         <td>Senast sedd:</td>
                         <td>${new Date(message.lastSeen).toLocaleString("sv-se") || "-"}</td>
                     </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: center; padding-top: 10px;">
+                            <button class="button is-small is-link is-outlined" onclick="promptHistoryDuration('${mmsi}', '${shipName}')">
+                                <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                                <span>Se Historik</span>
+                            </button>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         `;
@@ -320,11 +470,13 @@
         
 
         const isConsideredFixed = isFixed(shipName, message);
+        const mmsiStr = String(Math.round(parseFloat(mmsi) || 0));
+        if (offlineBoats.has(shipName) && !showOfflineBoats) return;
 
         if (
             (
                 showAllShips ||
-                TRACKED_SHIPS.includes(shipName) ||
+                mmsiStr in MMSI_NAME_MAP ||
                 shipName.toUpperCase().includes("RESCUE") ||
                 shipName.toUpperCase().includes("VASSARO") ||
                 isConsideredFixed
@@ -342,12 +494,12 @@
             if (shipMarkers[shipName]) {
                 shipMarkers[shipName]
                     .setLatLng(message.coordinates)
-                    .setRotationAngle(message.course || 0)
+                    .setRotationAngle(isConsideredFixed ? 0 : (message.course || 0))
                     .setIcon(currentIcon)
                     .setPopupContent(currentHTML)
             } else {
                 const marker = L.marker(message.coordinates, {
-                    rotationAngle: message.course || 0,
+                    rotationAngle: isConsideredFixed ? 0 : (message.course || 0),
                     icon: currentIcon
                 });
                 marker.bindPopup(currentHTML, {
@@ -437,6 +589,484 @@
         });
     });
 
+    //Playback speeds in seconds between each step
+    const PLAYBACK_SPEEDS = [0.05, 0.1, 0.5, 1, 2];
+
+    let historyData = [];
+    let historyLayerGroup = L.layerGroup();
+    let isHistoryMode = false;
+    let currentHistoryShipName = "";
+    let isPlaying = false;
+    let playbackInterval = null;
+    let playbackSpeedIndex = 1; // default: index 1 = 1s
+
+    let historyDurationHours = 12;
+    let pendingHistoryMmsi = null;
+    let pendingHistoryShipName = "";
+
+    const GAP_THRESHOLD = 30 * 60 * 1000; // 30 minuter
+
+    function getHistoryCutoffTime() {
+        return Date.now() - (historyDurationHours * 60 * 60 * 1000);
+    }
+
+    function promptHistoryDuration(mmsi, shipName) {
+        if (!mmsi) {
+            alert("Inget MMSI hittades för detta fartyg.");
+            return;
+        }
+        pendingHistoryMmsi = mmsi;
+        pendingHistoryShipName = shipName;
+        document.getElementById('modal-ship-name').innerText = formatName(shipName);
+        document.getElementById('history-duration-modal').classList.add('is-active');
+        lfmap.closePopup();
+    }
+
+    function closeDurationModal() {
+        document.getElementById('history-duration-modal').classList.remove('is-active');
+    }
+
+    function startHistoryLoading(durationStr) {
+        closeDurationModal();
+        if (durationStr === 'exact') {
+            historyDurationHours = 48;
+        } else {
+            historyDurationHours = parseInt(durationStr.replace('h', ''));
+        }
+        loadShipHistory(pendingHistoryMmsi, pendingHistoryShipName, durationStr);
+    }
+
+    async function loadShipHistory(mmsi, shipName, durationStr) {
+        isHistoryMode = true;
+        redrawAllMarkers();
+
+        document.getElementById('history-title').innerText = `Laddar historik för ${formatName(shipName)}...`;
+        document.getElementById('history-controls').style.display = 'block';
+
+        try {
+            let url;
+            if (durationStr === 'exact') {
+                url = `https://jumpgate.vassaro.net/ais/data/${mmsi}`;
+            } else {
+                url = `https://jumpgate.vassaro.net/ais/data/${durationStr}/${mmsi}`;
+            }
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Kunde inte hämta data");
+
+            let data = await response.json();
+
+            historyData = data.map(p => {
+                let ts = p.timestamp || p.minute;
+                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
+                    ts += 'Z';
+                }
+                return { ...p, timestamp: ts };
+            }).filter(p => p.latitude != null && p.longitude != null);
+
+            if (historyData.length === 0) {
+                alert("Ingen historik hittades.");
+                exitHistoryMode();
+                return;
+            }
+
+            currentHistoryShipName = shipName;
+            initializeHistoryMap(shipName);
+
+        } catch (error) {
+            console.error(error);
+            alert("Hittade ingen historik.");
+            exitHistoryMode();
+        }
+    }
+
+    function initializeHistoryMap(shipName, startAtTime = null) {
+        historyLayerGroup.addTo(lfmap);
+        document.getElementById('history-title').innerText = formatName(shipName);
+        historyLayerGroup.clearLayers();
+
+        const durationHours = historyDurationHours;
+        const cutoffTime = getHistoryCutoffTime();;
+
+        const visibleData = historyData.filter(p => new Date(p.timestamp).getTime() >= cutoffTime);
+
+        let segments = [];
+        let currentSegment = [];
+
+        if (visibleData.length > 0) {
+            // Starta första segmentet
+            currentSegment.push([visibleData[0].latitude, visibleData[0].longitude]);
+
+            for (let i = 0; i < visibleData.length - 1; i++) {
+                const t1 = new Date(visibleData[i].timestamp).getTime();
+                const t2 = new Date(visibleData[i+1].timestamp).getTime();
+                const nextLatLng = [visibleData[i+1].latitude, visibleData[i+1].longitude];
+
+                if (t2 - t1 > GAP_THRESHOLD) {
+                    // Spara nuvarande segment och börja ett nytt
+                    segments.push(currentSegment);
+                    currentSegment = [nextLatLng];
+                } else {
+                    // Inget hål
+                    currentSegment.push(nextLatLng);
+                }
+            }
+            // Spara sista segmentet
+            segments.push(currentSegment);
+        }
+
+        const isSatellite = lfmap.hasLayer(BASEMAPS.Satellit);
+        const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 110, 0, 0.4)';
+        
+        historyPath = L.polyline(segments, {
+            color: pathColor,
+            weight: 3,
+            dashArray: '5, 10'
+        }).addTo(historyLayerGroup);
+
+        lfmap.fitBounds(historyPath.getBounds(), { padding: [50, 50] });
+        
+        let targetPoint = null;
+
+        if (startAtTime && startAtTime >= cutoffTime) {
+            const { point } = findNearestDataPoint(startAtTime);
+            targetPoint = point;
+        }
+        
+        if (!targetPoint && historyData.length > 0) {
+            targetPoint = historyData[historyData.length - 1];
+        }
+
+        if (targetPoint) {
+            historyMarker = L.marker([targetPoint.latitude, targetPoint.longitude], {
+                icon: arrowIcon,
+                zIndexOffset: 1000
+            }).addTo(historyLayerGroup);
+        }
+
+        updateSliderRange();
+        renderSpeedButtons();
+
+        if (targetPoint) {
+            const slider = document.getElementById('history-slider');
+            slider.value = new Date(targetPoint.timestamp).getTime();
+            updateHistoryUI_Render(targetPoint);
+        }
+    }
+
+    function updateSliderRange() {
+        // Kontrollera switchen
+        const durationHours = historyDurationHours;
+        const cutoffTime = getHistoryCutoffTime();
+        
+        const nowMs = new Date().getTime();
+        const minMs = nowMs - (durationHours * 60 * 60 * 1000);
+        
+        const slider = document.getElementById('history-slider');
+        const gradientBar = document.getElementById('slider-gradient');
+
+        // Spara nuvarande värde
+        const currentValue = parseInt(slider.value);
+
+        // Uppdatera gränserna
+        slider.min = minMs;
+        slider.max = nowMs;
+
+        if (currentValue < minMs) {
+            slider.value = minMs;
+            updateHistoryFromSlider(minMs);
+        }
+
+        if (historyData.length < 2) {
+            gradientBar.style.background = '#ddd';
+            return;
+        }
+
+        const totalDuration = nowMs - minMs;
+        let gradientStops = [];
+
+        let segments = [];
+
+        let currentStart = new Date(historyData[0].timestamp).getTime();
+        let lastTime = currentStart;
+
+        if (currentStart > minMs) {
+            segments.push({ start: minMs, end: currentStart, type: 'gap' });
+        }
+
+        for (let i = 0; i < historyData.length - 1; i++) {
+            const t1 = new Date(historyData[i].timestamp).getTime();
+            const t2 = new Date(historyData[i+1].timestamp).getTime();
+            
+            if (t2 < minMs) {
+                currentStart = t2;
+                lastTime = t2;
+                continue;
+            }
+            
+            if (t1 > nowMs) break;
+
+            const diff = t2 - t1;
+
+            if (diff > GAP_THRESHOLD) {
+                if (t1 > currentStart) {
+                    segments.push({ start: currentStart, end: t1, type: 'data' });
+                }
+                segments.push({ start: t1, end: t2, type: 'gap' });
+                
+                currentStart = t2;
+            }
+            
+            lastTime = t2;
+        }
+
+        if (lastTime > currentStart) {
+             segments.push({ start: currentStart, end: lastTime, type: 'data' });
+        }
+
+        if (lastTime < nowMs) {
+            segments.push({ start: lastTime, end: nowMs, type: 'gap' });
+        }
+        
+        segments.forEach(seg => {
+            // Klipp segmenten mot vy-gränserna
+            const s = Math.max(minMs, Math.min(nowMs, seg.start));
+            const e = Math.max(minMs, Math.min(nowMs, seg.end));
+
+            if (s >= e) return;
+
+            const p1 = ((s - minMs) / totalDuration) * 100;
+            const p2 = ((e - minMs) / totalDuration) * 100;
+            const color = seg.type === 'data' ? '#48c774' : '#ddd';
+
+            gradientStops.push(`${color} ${p1.toFixed(2)}%`);
+            gradientStops.push(`${color} ${p2.toFixed(2)}%`);
+        });
+
+        if (gradientStops.length === 0) {
+             gradientBar.style.background = '#ddd';
+        } else {
+             gradientBar.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+        }
+    }
+
+    function findNearestDataPoint(targetTimeMs) {
+        let nearest = null;
+        let minDiff = Infinity;
+        let index = -1;
+
+        for (let i = 0; i < historyData.length; i++) {
+            const time = new Date(historyData[i].timestamp).getTime();
+            const diff = Math.abs(time - targetTimeMs);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearest = historyData[i];
+                index = i;
+            }
+        }
+        return { point: nearest, index: index };
+    }
+
+    function updateHistoryFromSlider(timestampVal) {
+        // Att dra slidern letar upp närmaste punkten
+        const targetTime = parseInt(timestampVal);
+        const { point } = findNearestDataPoint(targetTime);
+        if (point) {
+            updateHistoryUI_Render(point);
+        }
+    }
+
+    window.snapHistorySlider = function(timestampVal) {
+        const targetTime = parseInt(timestampVal);
+        const { point } = findNearestDataPoint(targetTime);
+
+        if (point) {
+            const snapTime = new Date(point.timestamp).getTime();
+            document.getElementById('history-slider').value = snapTime;
+            updateHistoryUI_Render(point);
+        }
+    }
+
+    function stepHistory(direction) {
+        const slider = document.getElementById('history-slider');
+        const currentVal = parseInt(slider.value);
+        
+        const { index } = findNearestDataPoint(currentVal);
+        
+        if (index === -1) return;
+
+        // Hoppa till nästa/föregående index
+        let newIndex = index + direction;
+        
+        if (newIndex < 0) newIndex = 0;
+        if (newIndex >= historyData.length) newIndex = historyData.length - 1;
+        
+        const newPoint = historyData[newIndex];
+        const newTime = new Date(newPoint.timestamp).getTime();
+        
+        // Flytta slidern och kartan
+        slider.value = newTime;
+        updateHistoryUI_Render(newPoint);
+    }
+
+    function updateHistoryUI_Render(point) {
+        const dateStr = new Date(point.timestamp).toLocaleString('sv-SE');
+        document.getElementById('history-time-label').innerText = dateStr;
+
+        const newLatLng = [point.latitude, point.longitude];
+        historyMarker.setLatLng(newLatLng);
+
+        if (point.course !== undefined) {
+            historyMarker.setRotationAngle(point.course);
+        }
+
+        document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
+        document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
+
+        //Ta bort gammal vektor om den finns
+        if (historyVector) {
+            historyLayerGroup.removeLayer(historyVector);
+            historyVector = null;
+        }
+
+        const speed = parseFloat(point.speed);
+        const course = parseFloat(point.course);
+
+        //Skapa ny vektor om fart finns och är > 0.2 knop
+        if (!isNaN(speed) && !isNaN(course) && speed > 0.2) {
+             const distance = speed * 100; // Samma skala som live-vyn
+
+             const startPoint = L.latLng(point.latitude, point.longitude);
+             const endPoint = L.GeometryUtil.destination(startPoint, course, distance);
+
+             const start = [point.latitude, point.longitude];
+             const end = [endPoint.lat, endPoint.lng];
+
+             historyVector = L.layerGroup();
+
+             // Svart outline (för synlighet)
+             historyVector.addLayer(L.polyline([start, end], {
+                 color: 'black',
+                 weight: 7,
+                 opacity: 1
+             }));
+
+             // Rosa linje
+             historyVector.addLayer(L.polyline([start, end], {
+                 color: '#D70077',
+                 weight: 3,
+                 opacity: 1
+             }));
+
+             // Cirkel i änden
+             historyVector.addLayer(L.circleMarker(end, {
+                 radius: 5,
+                 color: 'black',
+                 weight: 2,
+                 fillColor: '#D70077',
+                 fillOpacity: 1
+             }));
+             
+             historyVector.addTo(historyLayerGroup);
+        }
+    }
+
+    function updateHistoryUI(timeMs) {
+        const { point } = findNearestDataPoint(timeMs);
+        if(point) updateHistoryUI_Render(point);
+    }
+
+    function getSegmentEndIndex(fromIndex) {
+        for (let i = fromIndex; i < historyData.length - 1; i++) {
+            const t1 = new Date(historyData[i].timestamp).getTime();
+            const t2 = new Date(historyData[i + 1].timestamp).getTime();
+            if (t2 - t1 > GAP_THRESHOLD) return i;
+        }
+        return historyData.length - 1;
+    }
+
+    function togglePlayback() {
+        if (isPlaying) stopPlayback(); else startPlayback();
+    }
+
+    function startPlayback() {
+        const slider = document.getElementById('history-slider');
+        const { index } = findNearestDataPoint(parseInt(slider.value));
+        if (index === -1) return;
+        const segmentEnd = getSegmentEndIndex(index);
+        if (index >= segmentEnd) return;
+
+        isPlaying = true;
+        updatePlayButton();
+
+        const intervalMs = PLAYBACK_SPEEDS[playbackSpeedIndex] * 1000;
+        playbackInterval = setInterval(() => {
+            const { index: curIdx } = findNearestDataPoint(parseInt(document.getElementById('history-slider').value));
+            if (curIdx >= getSegmentEndIndex(curIdx)) {
+                stopPlayback();
+                return;
+            }
+            stepHistory(1);
+        }, intervalMs);
+    }
+
+    function stopPlayback() {
+        if (playbackInterval) {
+            clearInterval(playbackInterval);
+            playbackInterval = null;
+        }
+        isPlaying = false;
+        updatePlayButton();
+    }
+
+    function updatePlayButton() {
+        const btn = document.getElementById('play-button');
+        const icon = document.getElementById('play-icon');
+        if (!btn || !icon) return;
+        if (isPlaying) {
+            icon.className = 'fa-solid fa-pause';
+            btn.classList.replace('is-primary', 'is-warning');
+        } else {
+            icon.className = 'fa-solid fa-play';
+            btn.classList.replace('is-warning', 'is-primary');
+        }
+    }
+
+    function renderSpeedButtons() {
+        const container = document.getElementById('speed-buttons');
+        if (!container) return;
+        container.innerHTML = '';
+        PLAYBACK_SPEEDS.forEach((speed, i) => {
+            const tag = document.createElement('span');
+            tag.className = `tag is-clickable ${i === playbackSpeedIndex ? 'is-primary' : 'is-light'}`;
+            tag.textContent = speed + 's';
+            tag.onclick = () => setPlaybackSpeed(i);
+            container.appendChild(tag);
+        });
+    }
+
+    function setPlaybackSpeed(index) {
+        playbackSpeedIndex = index;
+        renderSpeedButtons();
+        if (isPlaying) {
+            stopPlayback();
+            startPlayback();
+        }
+    }
+
+    function exitHistoryMode() {
+        stopPlayback();
+        isHistoryMode = false;
+        historyData = [];
+
+        document.getElementById('history-controls').style.display = 'none';
+
+        historyLayerGroup.clearLayers();
+        historyLayerGroup.removeFrom(lfmap);
+        
+        redrawAllMarkers();
+    }
+
     function updateShipTable() {
         const shipTableBody = document.getElementById("shipTableBody");
         shipTableBody.innerHTML = "";
@@ -448,7 +1078,6 @@
 
         allShips.forEach(shipName => {
             const message = shipLastUpdate[shipName] || {};
-            // if (!message) return;
 
             const isConsideredFixed = isFixed(shipName, message);
 
@@ -498,7 +1127,7 @@
 
     function isFixed(shipName, message) {
         const isRefPoint = shipName.toUpperCase().includes("REF POINT");
-        const isStationary = (!message.speed || message.speed === 0) && !message.course 
+        const isStationary = (!message.speed || message.speed === 0)
                 && message.legend == "Unspecified" && message.navigationalStatus == "Not defined (default)";
         const isRock = shipName.toUpperCase().includes("GRUND")
         const isVartan = shipName.toUpperCase().includes("VARTAN")
