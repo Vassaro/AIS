@@ -65,6 +65,12 @@
                                 <span class="custom-slider"></span>
                             </label>Visa offline Vässaröfartyg
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center">
+                            <label class="custom-switch">
+                                <input type="checkbox" id="showWeatherSwitch">
+                                <span class="custom-slider"></span>
+                            </label>Visa väder
+                        </div>
                         <div class="navbar-item">
                             <div class="table-container" style="max-height: 500px; overflow: scroll;">
                                 <table class="table is-striped is-fullwidth">
@@ -142,7 +148,7 @@
 
                 <!-- Slider Container -->
                 <div style="position: relative; flex-grow: 1; height: 24px; display: flex; align-items: center;">
-                    <!-- Bakgrundsgrafik för data/hål -->
+                    <!-- background bar for data/gaps -->
                     <div id="slider-gradient" style="position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: #eee; width: 100%; top: 50%; transform: translateY(-50%);"></div>
 
                     <!-- Slider -->
@@ -196,7 +202,7 @@
     const NORTH_EAST = L.latLng(69.0, 24.5);
     const BOUNDS = L.latLngBounds(SOUTH_WEST, NORTH_EAST);
 
-    // Kartan börjar centrerad runt Strömsviken - Djuphamn
+    // map starts centered on Strömsviken - Djuphamn
     var lfmap = L.map('map', {
         center: [60.24521, 18.68388],
         zoom: 13,
@@ -250,12 +256,12 @@
     });
 
     function redrawAllMarkers() {
-        // Ta bort alla nuvarande markörer och vektorer
+        // clear existing markers and vectors
         Object.values(shipMarkers).forEach(marker => lfmap.removeLayer(marker));
         Object.values(shipVectors).forEach(vector => lfmap.removeLayer(vector));
         shipMarkers = {};
         shipVectors = {};
-        // Lägg till markörer igen enligt nya filtret
+        // re-add markers with the new filter
         Object.values(shipLastUpdate).forEach(message => {
             createMarker(message);
         });
@@ -341,20 +347,206 @@
     const arrowIcon = L.icon({
         iconUrl: 'img/Boat marker.svg',
         iconSize: [42, 42],
-        iconAnchor: [21, 21], // mitten av ikonen
+        iconAnchor: [21, 21], // center of icon
     });
 
     const stationaryIcon = L.icon({
         iconUrl: 'img/stationary.svg',
         iconSize: [42, 42],
-        iconAnchor: [21, 42], // botten av ikonen
+        iconAnchor: [21, 42], // bottom of icon
     });
 
     const locationIcon = L.divIcon({
         html: '<i style="color: var(--harbor-color)" class="fa-solid fa-location-crosshairs fa-2x"></i>',
         iconSize: [42, 42],
-        iconAnchor: [21, 21], // mitten av ikonen
+        iconAnchor: [21, 21], // center of icon
         className: "locationIcon"
+    });
+
+    // WEATHER (ViVa)
+    const VIVA_API_URL = "https://services.viva.sjofartsverket.se:8080/output/vivaoutputservice.svc/vivastation";
+    const WIND_HEADING_PLACEHOLDER = 0; // int placeholder rotation until a station's real wind is fetched
+    const WIND_CACHE_TTL_MS = 60 * 1000; // matches the API's own cache-control: max-age=60
+
+    const windIcon = L.divIcon({
+        html: '<i style="color: var(--weather-color)" class="fa-solid fa-arrow-up fa-2x"></i>',
+        iconSize: [42, 42],
+        iconAnchor: [21, 21], // center of icon
+        className: "windIcon"
+    });
+
+    const weatherDotIcon = L.divIcon({
+        html: '<i style="color: var(--weather-color)" class="fa-solid fa-circle"></i>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7], // center of icon
+        className: "weatherDotIcon"
+    });
+
+    let showWeather = false;
+    let weatherStations = null;        // cached full station list, fetched once
+    let weatherStationsLoading = null; // in-flight promise guard
+    const weatherMarkers = {};         // keyed by station ID
+    const weatherWindCache = {};       // stationID -> { wind, fetchedAt }; wind is null if station has none
+    const weatherLayerGroup = L.layerGroup();
+    let weatherRefreshInterval = null;
+
+    // cap how many weather requests can run at once
+    const ARROW_FETCH_CONCURRENCY = 6;
+    let activeArrowFetches = 0;
+    const arrowFetchQueue = [];
+
+    function enqueueArrowFetch(task) {
+        arrowFetchQueue.push(task);
+        processArrowFetchQueue();
+    }
+
+    function processArrowFetchQueue() {
+        while (activeArrowFetches < ARROW_FETCH_CONCURRENCY && arrowFetchQueue.length > 0) {
+            const task = arrowFetchQueue.shift();
+            activeArrowFetches++;
+            task().finally(() => {
+                activeArrowFetches--;
+                processArrowFetchQueue();
+            });
+        }
+    }
+
+    async function ensureWeatherStationsLoaded() {
+        if (weatherStations) return weatherStations;
+        if (!weatherStationsLoading) {
+            weatherStationsLoading = fetch(VIVA_API_URL)
+                .then(r => r.json())
+                .then(data => weatherStations = data.GetStationsResult.Stations);
+        }
+        return weatherStationsLoading;
+    }
+
+    function applyWindToMarker(marker, wind) {
+        if (wind) {
+            marker.setIcon(windIcon);
+            marker.setRotationAngle(wind.Heading || WIND_HEADING_PLACEHOLDER);
+        } else {
+            marker.setIcon(weatherDotIcon);
+        }
+    }
+
+    function isWindCacheFresh(stationId) {
+        const cached = weatherWindCache[stationId];
+        return !!cached && (Date.now() - cached.fetchedAt) < WIND_CACHE_TTL_MS;
+    }
+
+    function updateWeatherMarkers() {
+        if (!showWeather || !weatherStations) return;
+        const bounds = lfmap.getBounds();
+        const inView = new Set();
+
+        weatherStations.forEach(station => {
+            const latlng = [station.Lat, station.Lon];
+            if (!bounds.contains(latlng)) return;
+            inView.add(station.ID);
+            if (weatherMarkers[station.ID]) return;
+
+            const marker = L.marker(latlng, {
+                icon: windIcon,
+                rotationAngle: WIND_HEADING_PLACEHOLDER
+            });
+            marker.bindPopup(`Laddar ${station.Name}...`, { className: "shipPopup" });
+            marker.on('popupopen', () => loadStationDetail(station, marker));
+            marker._station = station; // used to refresh visible markers periodically
+            marker.addTo(weatherLayerGroup);
+            weatherMarkers[station.ID] = marker;
+
+            // station is in view - grab wind (from cache if still fresh) to draw the arrow
+            if (isWindCacheFresh(station.ID)) {
+                applyWindToMarker(marker, weatherWindCache[station.ID].wind);
+            } else {
+                enqueueArrowFetch(() => loadStationArrow(station, marker));
+            }
+        });
+
+        // drop markers that fell out of view (data stays cached)
+        Object.keys(weatherMarkers).forEach(id => {
+            if (!inView.has(Number(id))) {
+                weatherLayerGroup.removeLayer(weatherMarkers[id]);
+                delete weatherMarkers[id];
+            }
+        });
+    }
+
+    async function loadStationArrow(station, marker) {
+        try {
+            const response = await fetch(`${VIVA_API_URL}/${station.ID}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const samples = data.GetSingleStationResult.Samples || [];
+            const wind = samples.find(s => s.Type === 'wind' && s.Name === 'Medelvind')
+                      || samples.find(s => s.Type === 'wind')
+                      || null;
+            weatherWindCache[station.ID] = { wind, fetchedAt: Date.now() };
+            applyWindToMarker(marker, wind);
+        } catch (e) {
+            // arrow just keeps its last direction, nothing cached - retried next time station is visible
+        }
+    }
+
+    async function loadStationDetail(station, marker) {
+        try {
+            const response = await fetch(`${VIVA_API_URL}/${station.ID}`);
+            if (!response.ok) throw new Error("Kunde inte hämta väder");
+            const data = await response.json();
+            const samples = data.GetSingleStationResult.Samples || [];
+            const wind = samples.find(s => s.Type === 'wind' && s.Name === 'Medelvind')
+                      || samples.find(s => s.Type === 'wind')
+                      || null;
+
+            weatherWindCache[station.ID] = { wind, fetchedAt: Date.now() };
+            applyWindToMarker(marker, wind);
+
+            if (samples.length === 0) {
+                marker.setPopupContent(`${station.Name}: ingen data tillgänglig`);
+                return;
+            }
+
+            const rows = samples.map(s => `<tr><td>${s.Name}:</td><td>${s.Value} ${s.Unit}</td></tr>`).join('');
+            marker.setPopupContent(`
+                <table>
+                    <thead><tr><td colspan="2" style="font-weight:bold;">${station.Name}</td></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `);
+        } catch (e) {
+            marker.setPopupContent(`${station.Name}: kunde inte hämta väder`);
+        }
+    }
+
+    function refreshVisibleWeatherMarkers() {
+        Object.values(weatherMarkers).forEach(marker => {
+            enqueueArrowFetch(() => loadStationArrow(marker._station, marker));
+        });
+    }
+
+    document.getElementById('showWeatherSwitch').addEventListener('change', async function (event) {
+        showWeather = event.target.checked;
+        if (showWeather) {
+            lfmap.addLayer(weatherLayerGroup);
+            await ensureWeatherStationsLoaded();
+            updateWeatherMarkers();
+            if (!weatherRefreshInterval) {
+                weatherRefreshInterval = setInterval(refreshVisibleWeatherMarkers, WIND_CACHE_TTL_MS);
+            }
+        } else {
+            lfmap.removeLayer(weatherLayerGroup);
+            Object.values(weatherMarkers).forEach(m => weatherLayerGroup.removeLayer(m));
+            Object.keys(weatherMarkers).forEach(id => delete weatherMarkers[id]);
+            clearInterval(weatherRefreshInterval);
+            weatherRefreshInterval = null;
+        }
+    });
+
+    let weatherUpdateTimer = null;
+    lfmap.on('moveend zoomend', () => {
+        clearTimeout(weatherUpdateTimer);
+        weatherUpdateTimer = setTimeout(updateWeatherMarkers, 250);
     });
 
     const HARBORS = [
@@ -524,11 +716,11 @@
             if (typeof message.course === "number" && typeof message.speed === "number" && message.speed > 0.5) {
                 const distance = message.speed * 100;
 
-                // Skapa LatLng-objekt
+                // build the start point
                 const startPoint = L.latLng(message.coordinates[0], message.coordinates[1]);
                 const bearing = message.course;
 
-                // Beräkna endpoint (distans i meter)
+                // project the endpoint (distance in meters)
                 const endPoint = L.GeometryUtil.destination(startPoint, bearing, distance);
 
                 const start = [startPoint.lat, startPoint.lng];
@@ -536,7 +728,7 @@
 
                 const vectorGroup = L.layerGroup();
 
-                // Svart outline (bredare)
+                // black outline (wider, sits underneath)
                 const outline = L.polyline([start, end], {
                     color: 'black',
                     weight: 7,
@@ -544,7 +736,7 @@
                 });
                 vectorGroup.addLayer(outline);
 
-                // Rosa linje (ovanpå)
+                // pink line on top
                 const polyline = L.polyline([start, end], {
                     color: '#D70077',
                     weight: 3,
@@ -694,7 +886,7 @@
         let currentSegment = [];
 
         if (visibleData.length > 0) {
-            // Starta första segmentet
+            // kick off the first segment
             currentSegment.push([visibleData[0].latitude, visibleData[0].longitude]);
 
             for (let i = 0; i < visibleData.length - 1; i++) {
@@ -703,15 +895,15 @@
                 const nextLatLng = [visibleData[i+1].latitude, visibleData[i+1].longitude];
 
                 if (t2 - t1 > GAP_THRESHOLD) {
-                    // Spara nuvarande segment och börja ett nytt
+                    // close out this segment, start a new one
                     segments.push(currentSegment);
                     currentSegment = [nextLatLng];
                 } else {
-                    // Inget hål
+                    // no gap, keep going
                     currentSegment.push(nextLatLng);
                 }
             }
-            // Spara sista segmentet
+            // push the last segment
             segments.push(currentSegment);
         }
 
@@ -755,7 +947,7 @@
     }
 
     function updateSliderRange() {
-        // Kontrollera switchen
+        // recompute the visible time window
         const durationHours = historyDurationHours;
         const cutoffTime = getHistoryCutoffTime();
         
@@ -765,10 +957,10 @@
         const slider = document.getElementById('history-slider');
         const gradientBar = document.getElementById('slider-gradient');
 
-        // Spara nuvarande värde
+        // keep track of the current value
         const currentValue = parseInt(slider.value);
 
-        // Uppdatera gränserna
+        // update the slider bounds
         slider.min = minMs;
         slider.max = nowMs;
 
@@ -829,7 +1021,7 @@
         }
         
         segments.forEach(seg => {
-            // Klipp segmenten mot vy-gränserna
+            // clip segments to the visible range
             const s = Math.max(minMs, Math.min(nowMs, seg.start));
             const e = Math.max(minMs, Math.min(nowMs, seg.end));
 
@@ -868,7 +1060,7 @@
     }
 
     function updateHistoryFromSlider(timestampVal) {
-        // Att dra slidern letar upp närmaste punkten
+        // dragging the slider snaps to the nearest point
         const targetTime = parseInt(timestampVal);
         const { point } = findNearestDataPoint(targetTime);
         if (point) {
@@ -895,7 +1087,7 @@
         
         if (index === -1) return;
 
-        // Hoppa till nästa/föregående index
+        // jump to the next/previous index
         let newIndex = index + direction;
         
         if (newIndex < 0) newIndex = 0;
@@ -904,7 +1096,7 @@
         const newPoint = historyData[newIndex];
         const newTime = new Date(newPoint.timestamp).getTime();
         
-        // Flytta slidern och kartan
+        // move the slider to match
         slider.value = newTime;
         updateHistoryUI_Render(newPoint);
     }
@@ -923,7 +1115,7 @@
         document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
         document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
 
-        //Ta bort gammal vektor om den finns
+        // remove old vector if there is one
         if (historyVector) {
             historyLayerGroup.removeLayer(historyVector);
             historyVector = null;
@@ -932,9 +1124,9 @@
         const speed = parseFloat(point.speed);
         const course = parseFloat(point.course);
 
-        //Skapa ny vektor om fart finns och är > 0.2 knop
+        // draw a new vector if speed is above 0.2 knots
         if (!isNaN(speed) && !isNaN(course) && speed > 0.2) {
-             const distance = speed * 100; // Samma skala som live-vyn
+             const distance = speed * 100; // same scale as the live view
 
              const startPoint = L.latLng(point.latitude, point.longitude);
              const endPoint = L.GeometryUtil.destination(startPoint, course, distance);
@@ -944,21 +1136,21 @@
 
              historyVector = L.layerGroup();
 
-             // Svart outline (för synlighet)
+             // black outline for visibility
              historyVector.addLayer(L.polyline([start, end], {
                  color: 'black',
                  weight: 7,
                  opacity: 1
              }));
 
-             // Rosa linje
+             // pink line
              historyVector.addLayer(L.polyline([start, end], {
                  color: '#D70077',
                  weight: 3,
                  opacity: 1
              }));
 
-             // Cirkel i änden
+             // circle at the end
              historyVector.addLayer(L.circleMarker(end, {
                  radius: 5,
                  color: 'black',
