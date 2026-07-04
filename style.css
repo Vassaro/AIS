@@ -67,6 +67,19 @@ body {
     line-height: 20px;
 }
 
+.windIcon,
+.weatherDotIcon {
+    text-align: center;
+}
+
+.windIcon {
+    line-height: 42px;
+}
+
+.weatherDotIcon {
+    line-height: 14px;
+}
+
 .windIcon i,
 .weatherDotIcon i {
     text-shadow:

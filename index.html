@@ -424,7 +424,10 @@
     function applyWindToMarker(marker, wind) {
         if (wind) {
             marker.setIcon(windIcon);
-            marker.setRotationAngle(wind.Heading || WIND_HEADING_PLACEHOLDER);
+            // ViVa's Heading is the meteorological direction the wind blows FROM;
+            // flip 180° so the arrow points the way the wind is blowing TO.
+            const heading = wind.Heading || WIND_HEADING_PLACEHOLDER;
+            marker.setRotationAngle((heading + 180) % 360);
         } else {
             marker.setIcon(weatherDotIcon);
         }
