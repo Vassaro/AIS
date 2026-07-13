@@ -394,6 +394,15 @@
         return BOAT_COLORS[getShipCategory(shipName)];
     }
 
+    // black outline underneath, colored line + end circle on top, matches boat icon
+    function createVectorLayer(start, end, color) {
+        const group = L.layerGroup();
+        group.addLayer(L.polyline([start, end], { color: 'black', weight: 7, opacity: 1 }));
+        group.addLayer(L.polyline([start, end], { color: color, weight: 3, opacity: 1 }));
+        group.addLayer(L.circleMarker(end, { radius: 5, color: 'black', weight: 2, fillColor: color, fillOpacity: 1 }));
+        return group;
+    }
+
     const stationaryIcon = L.icon({
         iconUrl: 'img/stationary.svg',
         iconSize: [42, 42],
@@ -520,15 +529,20 @@
         });
     }
 
+    async function fetchStationSamples(station) {
+        const response = await fetch(`${VIVA_API_URL}/${station.ID}`);
+        if (!response.ok) throw new Error("Kunde inte hämta väder");
+        const data = await response.json();
+        const samples = data.GetSingleStationResult.Samples || [];
+        const wind = samples.find(s => s.Type === 'wind' && s.Name === 'Medelvind')
+                  || samples.find(s => s.Type === 'wind')
+                  || null;
+        return { samples, wind };
+    }
+
     async function loadStationArrow(station, marker) {
         try {
-            const response = await fetch(`${VIVA_API_URL}/${station.ID}`);
-            if (!response.ok) return;
-            const data = await response.json();
-            const samples = data.GetSingleStationResult.Samples || [];
-            const wind = samples.find(s => s.Type === 'wind' && s.Name === 'Medelvind')
-                      || samples.find(s => s.Type === 'wind')
-                      || null;
+            const { wind } = await fetchStationSamples(station);
             weatherWindCache[station.ID] = { wind, fetchedAt: Date.now() };
             applyWindToMarker(marker, wind);
         } catch (e) {
@@ -538,13 +552,7 @@
 
     async function loadStationDetail(station, marker) {
         try {
-            const response = await fetch(`${VIVA_API_URL}/${station.ID}`);
-            if (!response.ok) throw new Error("Kunde inte hämta väder");
-            const data = await response.json();
-            const samples = data.GetSingleStationResult.Samples || [];
-            const wind = samples.find(s => s.Type === 'wind' && s.Name === 'Medelvind')
-                      || samples.find(s => s.Type === 'wind')
-                      || null;
+            const { samples, wind } = await fetchStationSamples(station);
 
             weatherWindCache[station.ID] = { wind, fetchedAt: Date.now() };
             applyWindToMarker(marker, wind);
@@ -788,34 +796,7 @@
                 const start = [startPoint.lat, startPoint.lng];
                 const end = [endPoint.lat, endPoint.lng];
 
-                const vectorGroup = L.layerGroup();
-                const shipColor = getShipColor(shipName);
-
-                // black outline (wider, sits underneath)
-                const outline = L.polyline([start, end], {
-                    color: 'black',
-                    weight: 7,
-                    opacity: 1
-                });
-                vectorGroup.addLayer(outline);
-
-                // colored line on top, matches boat icon
-                const polyline = L.polyline([start, end], {
-                    color: shipColor,
-                    weight: 3,
-                    opacity: 1
-                });
-                vectorGroup.addLayer(polyline);
-
-                const circle = L.circleMarker(end, {
-                    radius: 5,
-                    color: 'black',
-                    weight: 2,
-                    fillColor: shipColor,
-                    fillOpacity: 1
-                });
-                vectorGroup.addLayer(circle);
-
+                const vectorGroup = createVectorLayer(start, end, getShipColor(shipName));
                 vectorGroup.addTo(lfmap);
                 shipVectors[shipName] = vectorGroup;
             }
@@ -1197,32 +1178,7 @@
              const start = [point.latitude, point.longitude];
              const end = [endPoint.lat, endPoint.lng];
 
-             historyVector = L.layerGroup();
-             const historyShipColor = getShipColor(currentHistoryShipName);
-
-             // black outline for visibility
-             historyVector.addLayer(L.polyline([start, end], {
-                 color: 'black',
-                 weight: 7,
-                 opacity: 1
-             }));
-
-             // colored line, matches boat icon
-             historyVector.addLayer(L.polyline([start, end], {
-                 color: historyShipColor,
-                 weight: 3,
-                 opacity: 1
-             }));
-
-             // circle at the end
-             historyVector.addLayer(L.circleMarker(end, {
-                 radius: 5,
-                 color: 'black',
-                 weight: 2,
-                 fillColor: historyShipColor,
-                 fillOpacity: 1
-             }));
-             
+             historyVector = createVectorLayer(start, end, getShipColor(currentHistoryShipName));
              historyVector.addTo(historyLayerGroup);
         }
     }
