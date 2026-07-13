@@ -71,6 +71,24 @@
                                 <span class="custom-slider"></span>
                             </label>Visa väder
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center">
+                            <div class="select is-small">
+                                <select id="autoRefreshSelect">
+                                    <option value="0">Av</option>
+                                    <option value="60000">1 min</option>
+                                    <option value="300000">5 min</option>
+                                    <option value="900000">15 min</option>
+                                    <option value="1800000">30 min</option>
+                                    <option value="3600000">1 tim</option>
+                                </select>
+                            </div>&nbsp;Uppdatera automatiskt
+                        </div>
+                        <div class="navbar-item">
+                            <button id="resetZoomButton" class="button is-small is-fullwidth">
+                                <span class="icon"><i class="fa-solid fa-magnifying-glass-minus"></i></span>
+                                <span>Återställ zoom</span>
+                            </button>
+                        </div>
                         <div class="navbar-item">
                             <div class="table-container" style="max-height: 500px; overflow: scroll;">
                                 <table class="table is-striped is-fullwidth">
@@ -202,15 +220,41 @@
     const NORTH_EAST = L.latLng(69.0, 24.5);
     const BOUNDS = L.latLngBounds(SOUTH_WEST, NORTH_EAST);
 
+    // PERSISTED SETTINGS (localStorage)
+    const SETTINGS_KEY = 'ais-settings';
+    function loadSettings() {
+        try {
+            return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+        } catch (e) {
+            return {};
+        }
+    }
+    function saveSettings(patch) {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), ...patch }));
+    }
+    const savedSettings = loadSettings();
+
     // map starts centered on Strömsviken - Djuphamn
+    const DEFAULT_CENTER = [60.24521, 18.68388];
+    const DEFAULT_ZOOM = 13;
+
     var lfmap = L.map('map', {
-        center: [60.24521, 18.68388],
-        zoom: 13,
+        center: savedSettings.center || DEFAULT_CENTER,
+        zoom: savedSettings.zoom ?? DEFAULT_ZOOM,
         minZoom: 8,
         maxBounds: BOUNDS,
         maxBoundsViscosity: 1.0,
         zoomControl: false,
         layers: [BASEMAPS.OpenStreetMap]
+    });
+
+    lfmap.on('zoomend moveend', () => {
+        const c = lfmap.getCenter();
+        saveSettings({ zoom: lfmap.getZoom(), center: [c.lat, c.lng] });
+    });
+
+    document.getElementById('resetZoomButton').addEventListener('click', () => {
+        lfmap.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     });
 
     L.control.layers(BASEMAPS, null, { position: 'bottomright' }).addTo(lfmap);
@@ -221,24 +265,49 @@
     }).addTo(lfmap);
 
 
-    let showAllShips = false;
-    let showStationary = false;
-    let showOfflineBoats = true;
+    let showAllShips = savedSettings.showAllShips ?? false;
+    let showStationary = savedSettings.showStationary ?? false;
+    let showOfflineBoats = savedSettings.showOfflineBoats ?? true;
     const offlineBoats = new Set();
+
+    document.getElementById('showAllShipsSwitch').checked = showAllShips;
+    document.getElementById('showStationarySwitch').checked = showStationary;
+    document.getElementById('showOfflineBoatsSwitch').checked = showOfflineBoats;
 
     document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
         showAllShips = event.target.checked;
+        saveSettings({ showAllShips });
         redrawAllMarkers();
     });
 
     document.getElementById('showStationarySwitch').addEventListener('change', function (event) {
         showStationary = event.target.checked;
+        saveSettings({ showStationary });
         redrawAllMarkers();
     });
 
     document.getElementById('showOfflineBoatsSwitch').addEventListener('change', function (event) {
         showOfflineBoats = event.target.checked;
+        saveSettings({ showOfflineBoats });
         redrawAllMarkers();
+    });
+
+    let autoRefreshInterval = null;
+    const autoRefreshSelect = document.getElementById('autoRefreshSelect');
+
+    function applyAutoRefresh(ms) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = ms > 0 ? setInterval(() => location.reload(), ms) : null;
+    }
+
+    const savedAutoRefreshMs = savedSettings.autoRefreshMs ?? 0;
+    autoRefreshSelect.value = String(savedAutoRefreshMs);
+    applyAutoRefresh(savedAutoRefreshMs);
+
+    autoRefreshSelect.addEventListener('change', function (event) {
+        const ms = Number(event.target.value);
+        saveSettings({ autoRefreshMs: ms });
+        applyAutoRefresh(ms);
     });
 
     lfmap.on('baselayerchange', function (e) {
@@ -418,7 +487,7 @@
         className: "weatherDotIcon"
     });
 
-    let showWeather = false;
+    let showWeather = savedSettings.showWeather ?? false;
     let weatherStations = null;        // cached full station list, fetched once
     let weatherStationsLoading = null; // in-flight promise guard
     const weatherMarkers = {};         // keyed by station ID
@@ -566,6 +635,7 @@
 
     document.getElementById('showWeatherSwitch').addEventListener('change', async function (event) {
         showWeather = event.target.checked;
+        saveSettings({ showWeather });
         if (showWeather) {
             lfmap.addLayer(weatherLayerGroup);
             await ensureWeatherStationsLoaded();
@@ -581,6 +651,11 @@
             weatherRefreshInterval = null;
         }
     });
+
+    document.getElementById('showWeatherSwitch').checked = showWeather;
+    if (showWeather) {
+        document.getElementById('showWeatherSwitch').dispatchEvent(new Event('change'));
+    }
 
     let weatherUpdateTimer = null;
     lfmap.on('moveend zoomend', () => {
