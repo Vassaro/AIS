@@ -622,11 +622,18 @@
         "265022370": "RESCUE SUNNANO",
         "265518870": "RESCUE O WALLENIUS",
         "265001110": "RESCUE EKMAN",
+        "265058130": "RESCUE BLI OBERG",
         "265045020": "BRANDBAT FLAMMAN",
-        "265819000": "KBV 202"
+        "265819000": "KBV 202",
     };
 
-    const VASSARO_SHIP_NAMES = new Set(Object.values(MMSI_NAME_MAP).map(n => n.toUpperCase()));
+    const VASSARO_SHIP_NAMES = new Set([
+        "VIGGEN",
+        "MASEN",
+        "GRISSLAN VASSARO",
+        "BULLRET VASSARO",
+        "TARNAN VASSARO"
+    ]);
 
     var shipMarkers = {};
 
@@ -710,15 +717,14 @@
         
 
         const isConsideredFixed = isFixed(shipName, message);
-        const mmsiStr = String(Math.round(parseFloat(mmsi) || 0));
         if (offlineBoats.has(shipName) && !showOfflineBoats) return;
 
+        const shipCategory = getShipCategory(shipName);
         if (
             (
                 showAllShips ||
-                mmsiStr in MMSI_NAME_MAP ||
-                shipName.toUpperCase().includes("RESCUE") ||
-                shipName.toUpperCase().includes("VASSARO") ||
+                shipCategory === "rescue" ||
+                shipCategory === "vassaro" ||
                 isConsideredFixed
             )
         ) {
