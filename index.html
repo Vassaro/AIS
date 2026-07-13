@@ -276,6 +276,13 @@
     let historyPath = null;
     let historyVector = null;
 
+    function resolveShipName(entity) {
+        const rawName = entity.name && entity.name.trim();
+        if (rawName) return rawName;
+        const mmsiStr = String(Math.round(parseFloat(entity.mmsi)) || 0);
+        return MMSI_NAME_MAP[mmsiStr] || null;
+    }
+
     async function fetchLatestAndAddOfflineBoats() {
         try {
             const response = await fetch('https://jumpgate.vassaro.net/ais/data/latest');
@@ -283,8 +290,7 @@
             const vessels = await response.json();
 
             vessels.forEach(vessel => {
-                const mmsiStr = String(Math.round(parseFloat(vessel.mmsi) || 0));
-                const shipName = MMSI_NAME_MAP[mmsiStr];
+                const shipName = resolveShipName(vessel);
                 if (!shipName) return;
                 if (shipLastUpdate[shipName]) return;
                 if ((vessel.speed || 0) >= 0.5) return;
@@ -314,8 +320,9 @@
         if (event.data.startsWith('42["vesselPositions-init"')) {
             const vessels = JSON.parse(event.data.toString().slice(2))[1];
             vessels.forEach(message => {
-                const shipName = message.name && message.name.trim();
+                const shipName = resolveShipName(message);
                 if (!shipName) return;
+                message.name = shipName;
                 if (!shipLastUpdate[shipName]) {
                     message.lastSeen = new Date();
                     createMarker(message);
@@ -325,8 +332,9 @@
             fetchLatestAndAddOfflineBoats();
         } else {
             const message = JSON.parse(event.data.toString().slice(2))[1];
-            const shipName = message.name && message.name.trim();
+            const shipName = resolveShipName(message);
             if (shipName) {
+                message.name = shipName;
                 message.lastSeen = new Date();
                 shipLastUpdate[shipName] = message;
             }
