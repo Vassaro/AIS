@@ -344,11 +344,47 @@
     };
 
 
-    const arrowIcon = L.icon({
-        iconUrl: 'img/Boat marker.svg',
+    const BOAT_COLORS = {
+        vassaro: '#0033ff',
+        rescue: '#f10010',
+        default: '#ff27ac'
+    };
+
+    const arrowIconVassaro = L.icon({
+        iconUrl: 'img/Boat marker blue.svg',
         iconSize: [42, 42],
         iconAnchor: [21, 21], // center of icon
     });
+
+    const arrowIconRescue = L.icon({
+        iconUrl: 'img/Boat marker red.svg',
+        iconSize: [42, 42],
+        iconAnchor: [21, 21], // center of icon
+    });
+
+    const arrowIconDefault = L.icon({
+        iconUrl: 'img/Boat marker pink.svg',
+        iconSize: [42, 42],
+        iconAnchor: [21, 21], // center of icon
+    });
+
+    function getShipCategory(shipName) {
+        const upper = shipName.toUpperCase();
+        if (upper.includes("RESCUE")) return "rescue";
+        if (upper.includes("VASSARO") || VASSARO_SHIP_NAMES.has(upper)) return "vassaro";
+        return "default";
+    }
+
+    function getShipIcon(shipName) {
+        const category = getShipCategory(shipName);
+        if (category === "rescue") return arrowIconRescue;
+        if (category === "vassaro") return arrowIconVassaro;
+        return arrowIconDefault;
+    }
+
+    function getShipColor(shipName) {
+        return BOAT_COLORS[getShipCategory(shipName)];
+    }
 
     const stationaryIcon = L.icon({
         iconUrl: 'img/stationary.svg',
@@ -580,8 +616,24 @@
         "265575820": "MASEN",
         "265575840": "GRISSLAN VASSARO",
         "265060020": "BULLRET VASSARO",
-        "265672200": "TARNAN VASSARO"
+        "265672200": "TARNAN VASSARO",
+        "265052640": "POLIS 1 29 1690",
+        "265786980": "RESCUE PETER BORG",
+        "265022370": "RESCUE SUNNANO",
+        "265518870": "RESCUE O WALLENIUS",
+        "265001110": "RESCUE EKMAN",
+        "265058130": "RESCUE BLI OBERG",
+        "265045020": "BRANDBAT FLAMMAN",
+        "265819000": "KBV 202",
     };
+
+    const VASSARO_SHIP_NAMES = new Set([
+        "VIGGEN",
+        "MASEN",
+        "GRISSLAN VASSARO",
+        "BULLRET VASSARO",
+        "TARNAN VASSARO"
+    ]);
 
     var shipMarkers = {};
 
@@ -665,15 +717,14 @@
         
 
         const isConsideredFixed = isFixed(shipName, message);
-        const mmsiStr = String(Math.round(parseFloat(mmsi) || 0));
         if (offlineBoats.has(shipName) && !showOfflineBoats) return;
 
+        const shipCategory = getShipCategory(shipName);
         if (
             (
                 showAllShips ||
-                mmsiStr in MMSI_NAME_MAP ||
-                shipName.toUpperCase().includes("RESCUE") ||
-                shipName.toUpperCase().includes("VASSARO") ||
+                shipCategory === "rescue" ||
+                shipCategory === "vassaro" ||
                 isConsideredFixed
             )
         ) {
@@ -682,7 +733,7 @@
                 return;
             }               
 
-            const currentIcon = isConsideredFixed ? stationaryIcon : arrowIcon;
+            const currentIcon = isConsideredFixed ? stationaryIcon : getShipIcon(shipName);
             const currentHTML = isConsideredFixed ? statInfoHTML : infoHTML;
 
             // console.log(message)
@@ -730,6 +781,7 @@
                 const end = [endPoint.lat, endPoint.lng];
 
                 const vectorGroup = L.layerGroup();
+                const shipColor = getShipColor(shipName);
 
                 // black outline (wider, sits underneath)
                 const outline = L.polyline([start, end], {
@@ -739,9 +791,9 @@
                 });
                 vectorGroup.addLayer(outline);
 
-                // pink line on top
+                // colored line on top, matches boat icon
                 const polyline = L.polyline([start, end], {
-                    color: '#D70077',
+                    color: shipColor,
                     weight: 3,
                     opacity: 1
                 });
@@ -751,7 +803,7 @@
                     radius: 5,
                     color: 'black',
                     weight: 2,
-                    fillColor: '#D70077',
+                    fillColor: shipColor,
                     fillOpacity: 1
                 });
                 vectorGroup.addLayer(circle);
@@ -934,7 +986,7 @@
 
         if (targetPoint) {
             historyMarker = L.marker([targetPoint.latitude, targetPoint.longitude], {
-                icon: arrowIcon,
+                icon: getShipIcon(shipName),
                 zIndexOffset: 1000
             }).addTo(historyLayerGroup);
         }
@@ -1138,6 +1190,7 @@
              const end = [endPoint.lat, endPoint.lng];
 
              historyVector = L.layerGroup();
+             const historyShipColor = getShipColor(currentHistoryShipName);
 
              // black outline for visibility
              historyVector.addLayer(L.polyline([start, end], {
@@ -1146,9 +1199,9 @@
                  opacity: 1
              }));
 
-             // pink line
+             // colored line, matches boat icon
              historyVector.addLayer(L.polyline([start, end], {
-                 color: '#D70077',
+                 color: historyShipColor,
                  weight: 3,
                  opacity: 1
              }));
@@ -1158,7 +1211,7 @@
                  radius: 5,
                  color: 'black',
                  weight: 2,
-                 fillColor: '#D70077',
+                 fillColor: historyShipColor,
                  fillOpacity: 1
              }));
              
