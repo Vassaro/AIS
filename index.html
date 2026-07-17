@@ -362,7 +362,6 @@
                 const shipName = resolveShipName(vessel);
                 if (!shipName) return;
                 if (shipLastUpdate[shipName]) return;
-                if ((vessel.speed || 0) >= 0.5) return;
                 if (vessel.latitude == null || vessel.longitude == null) return;
 
                 let ts = vessel.timestamp;
