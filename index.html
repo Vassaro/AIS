@@ -19,12 +19,13 @@
     <script src="src/leaflet.nauticalscale.js"></script>
 
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="css/navbar.css" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 </head>
 
 <body>
-    <nav class="navbar is-fixed-top" role="navigation" aria-label="main navigation">
+    <nav class="navbar is-fixed-top" id="navbar" role="navigation" aria-label="main navigation">
         <div class="navbar-brand">
             <a class="navbar-item" href="./">
                 <img src="img/vassaro_logga.jpg">&nbsp;Vässarö AIS
@@ -200,6 +201,8 @@
             <span class="tag is-info" id="history-course">-</span>
         </div>
     </div>
+
+    <script src="js/navbar.js"></script>
 
 </body>
 
