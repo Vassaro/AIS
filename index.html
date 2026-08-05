@@ -72,6 +72,12 @@
                                 <span class="custom-slider"></span>
                             </label>Visa väder
                         </div>
+                        <div class="navbar-item is-flex is-align-items-center is-hidden-touch">
+                            <label class="custom-switch">
+                                <input type="checkbox" id="autoHideNavbarSwitch" checked>
+                                <span class="custom-slider"></span>
+                            </label>Dölj meny automatiskt
+                        </div>
                         <div class="navbar-item is-flex is-align-items-center">
                             <div class="select is-small">
                                 <select id="autoRefreshSelect">
@@ -293,6 +299,16 @@
         showOfflineBoats = event.target.checked;
         saveSettings({ showOfflineBoats });
         redrawAllMarkers();
+    });
+
+    let autoHideNavbar = savedSettings.autoHideNavbar ?? true;
+    document.getElementById('autoHideNavbarSwitch').checked = autoHideNavbar;
+    window.setNavbarAutoHideEnabled(autoHideNavbar);
+
+    document.getElementById('autoHideNavbarSwitch').addEventListener('change', function (event) {
+        autoHideNavbar = event.target.checked;
+        saveSettings({ autoHideNavbar });
+        window.setNavbarAutoHideEnabled(autoHideNavbar);
     });
 
     let autoRefreshInterval = null;
