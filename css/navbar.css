@@ -1,0 +1,11 @@
+.navbar-hidden {
+    transform: translateY(-100%) !important;
+}
+
+.navbar.is-fixed-top {
+    transition: transform 0.3s ease;
+}
+
+.navbar.is-fixed-top.navbar-hidden {
+    transform: translateY(-100%) !important;
+}
