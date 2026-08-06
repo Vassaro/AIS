@@ -373,7 +373,7 @@
 
     async function fetchLatestAndAddOfflineBoats() {
         try {
-            const response = await fetch('https://jumpgate.vassaro.net/ais/data/latest');
+            const response = await fetch('https://ais.vassaro.net/api/data/latest');
             if (!response.ok) return;
             const vessels = await response.json();
 
@@ -975,9 +975,9 @@
         try {
             let url;
             if (durationStr === 'exact') {
-                url = `https://jumpgate.vassaro.net/ais/data/${mmsi}`;
+                url = `https://ais.vassaro.net/api/data/${mmsi}`;
             } else {
-                url = `https://jumpgate.vassaro.net/ais/data/${durationStr}/${mmsi}`;
+                url = `https://ais.vassaro.net/api/data/${durationStr}/${mmsi}`;
             }
             
             const response = await fetch(url);
