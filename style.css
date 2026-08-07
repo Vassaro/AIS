@@ -7,6 +7,7 @@
     --popup-background: rgba(225, 225, 225, 0.9);
     --ship-color: #d70077;
     --harbor-color: var(--accent-color);
+    --weather-color: #0077d7;
 }
 
 body {
@@ -64,6 +65,28 @@ body {
 .locationIcon {
     text-align: center;
     line-height: 20px;
+}
+
+.windIcon,
+.weatherDotIcon {
+    text-align: center;
+}
+
+.windIcon {
+    line-height: 42px;
+}
+
+.weatherDotIcon {
+    line-height: 14px;
+}
+
+.windIcon i,
+.weatherDotIcon i {
+    text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
 }
 
 .custom-switch {
