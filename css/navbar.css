@@ -9,3 +9,47 @@
 .navbar.is-fixed-top.navbar-hidden {
     transform: translateY(-100%) !important;
 }
+
+.navbar .navbar-brand {
+    flex: 1;
+}
+
+/* live status: grey while connecting, green when live, red when cut off */
+.conn-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d99a1e;
+}
+
+[data-state="live"] .conn-dot {
+    background: #1f9d55;
+}
+
+[data-state="offline"] .conn-dot {
+    background: #d0453b;
+}
+
+.panel-toggle {
+    width: 40px;
+    height: 40px;
+    margin: auto 8px auto auto;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font-size: 1.0625rem;
+    cursor: pointer;
+}
+
+.panel-toggle[aria-expanded="true"] {
+    background: var(--switch-on);
+    color: var(--surface);
+}
+
+@media (max-width: 400px) {
+    #connectionLabel {
+        display: none;
+    }
+}

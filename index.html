@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 
 <head>
     <title>Vässarö AIS</title>
@@ -27,107 +27,94 @@
 <body>
     <nav class="navbar is-fixed-top" role="navigation" aria-label="main navigation">
         <div class="navbar-brand">
-            <a class="navbar-item" href="./">
+            <a class="navbar-item has-text-weight-semibold" href="./">
                 <img src="img/vassaro_logga.jpg">&nbsp;Vässarö AIS
                 <!-- <i class="fa-solid fa-anchor"></i>&nbsp;Vässarö AIS -->
             </a>
-
-            <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navMenu">
-                <span aria-hidden="true"></span>
-                <span aria-hidden="true"></span>
-                <span aria-hidden="true"></span>
-                <span aria-hidden="true"></span>
-            </a>
-
-
-        </div>
-        <div class="navbar-menu" id="navMenu">
-            <div class="navbar-end">
-                <div class="navbar-item has-dropdown is-hoverable">
-                    <a class="navbar-link hidden-mobile">
-                        <i class="fa-solid fa-ship"></i>&nbsp;Markers
-                    </a>
-                    <div class="navbar-dropdown is-right">
-                        <div class="navbar-item is-flex is-align-items-center">
-                            <label class="custom-switch">
-                                <input type="checkbox" id="showAllShipsSwitch">
-                                <span class="custom-slider"></span>
-                            </label>Visa alla fartyg</span>
-                        </div>
-                        <div class="navbar-item is-flex is-align-items-center">
-                            <label class="custom-switch">
-                                <input type="checkbox" id="showStationarySwitch">
-                                <span class="custom-slider"></span>
-                            </label>Visa fasta punkter
-                        </div>
-                        <div class="navbar-item is-flex is-align-items-center">
-                            <label class="custom-switch">
-                                <input type="checkbox" id="showOfflineBoatsSwitch" checked>
-                                <span class="custom-slider"></span>
-                            </label>Visa offline Vässaröfartyg
-                        </div>
-                        <div class="navbar-item is-flex is-align-items-center">
-                            <label class="custom-switch">
-                                <input type="checkbox" id="showWeatherSwitch">
-                                <span class="custom-slider"></span>
-                            </label>Visa väder
-                        </div>
-                        <div class="navbar-item is-flex is-align-items-center is-hidden-touch">
-                            <label class="custom-switch">
-                                <input type="checkbox" id="autoHideNavbarSwitch" checked>
-                                <span class="custom-slider"></span>
-                            </label>Dölj meny automatiskt
-                        </div>
-                        <div class="navbar-item is-flex is-align-items-center">
-                            <div class="select is-small">
-                                <select id="autoRefreshSelect">
-                                    <option value="0">Av</option>
-                                    <option value="60000">1 min</option>
-                                    <option value="300000">5 min</option>
-                                    <option value="900000">15 min</option>
-                                    <option value="1800000">30 min</option>
-                                    <option value="3600000">1 tim</option>
-                                </select>
-                            </div>&nbsp;Uppdatera automatiskt
-                        </div>
-                        <div class="navbar-item">
-                            <button id="resetZoomButton" class="button is-small is-fullwidth">
-                                <span class="icon"><i class="fa-solid fa-magnifying-glass-minus"></i></span>
-                                <span>Återställ zoom</span>
-                            </button>
-                        </div>
-                        <div class="navbar-item">
-                            <div class="table-container" style="max-height: 500px; overflow: scroll;">
-                                <table class="table is-striped is-fullwidth">
-                                    <thead>
-                                        <th colspan="5" style="text-align: center; background-color: #f5f5f5;">Fartyg</th>
-                                        <tr>
-                                            <th>Namn</th>
-                                            <th>Fart</th>
-                                            <th>Kurs</th>
-                                            <th colspan="2">Senast sedd</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="shipTableBody"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <hr class="navbar-divider">
-                        <div class="navbar-item">
-                            <div class="content">
-                                <p>
-                                    Den här hemsidan bor på
-                                    <a href="https://github.com/vassaro/AIS">
-                                        Github <i class="fa-brands fa-github"></i>
-                                    </a>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <span id="connectionStatus" class="navbar-item is-size-7 has-text-grey" data-state="connecting">
+                <span class="conn-dot"></span><span id="connectionLabel">Ansluter…</span>
+            </span>
+            <button id="panelToggle" class="panel-toggle" aria-controls="controlPanel" aria-expanded="false" aria-label="Fartyg och inställningar">
+                <i class="fa-solid fa-sliders"></i>
+            </button>
         </div>
     </nav>
+
+    <aside id="controlPanel" class="control-panel">
+        <header id="panelHeader" class="panel-header">
+            <button class="sheet-grabber" aria-label="Visa eller dölj fartygslistan"></button>
+            <h2 class="is-size-5 has-text-weight-semibold">Fartyg <span id="shipCount" class="is-size-7 has-text-grey">0</span></h2>
+        </header>
+
+        <div class="panel-body">
+            <div class="panel-section">
+                <label class="panel-row">Visa alla fartyg
+                    <span class="custom-switch"><input type="checkbox" id="showAllShipsSwitch"><span class="custom-slider"></span></span>
+                </label>
+                <label class="panel-row">Visa offline Vässaröfartyg
+                    <span class="custom-switch"><input type="checkbox" id="showOfflineBoatsSwitch" checked><span class="custom-slider"></span></span>
+                </label>
+                <label class="panel-row">Visa fasta punkter
+                    <span class="custom-switch"><input type="checkbox" id="showStationarySwitch"><span class="custom-slider"></span></span>
+                </label>
+                <label class="panel-row">Visa väder
+                    <span class="custom-switch"><input type="checkbox" id="showWeatherSwitch"><span class="custom-slider"></span></span>
+                </label>
+            </div>
+
+            <div class="panel-section">
+                <table class="table is-fullwidth is-hoverable is-size-7">
+                    <thead>
+                        <tr>
+                            <th>Namn</th>
+                            <th class="has-text-right">Fart</th>
+                            <th class="has-text-right">Kurs</th>
+                            <th class="has-text-right" colspan="2">Senast sedd</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shipTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="panel-section">
+                <label class="panel-row desktop-only">Dölj meny automatiskt
+                    <span class="custom-switch"><input type="checkbox" id="autoHideNavbarSwitch" checked><span class="custom-slider"></span></span>
+                </label>
+                <label class="panel-row">Uppdatera automatiskt
+                    <span class="select is-small">
+                        <select id="autoRefreshSelect">
+                            <option value="0">Av</option>
+                            <option value="60000">1 min</option>
+                            <option value="300000">5 min</option>
+                            <option value="900000">15 min</option>
+                            <option value="1800000">30 min</option>
+                            <option value="3600000">1 tim</option>
+                        </select>
+                    </span>
+                </label>
+                <label class="panel-row">Storlek på båtnamn
+                    <span class="select is-small">
+                        <select id="labelSizeSelect">
+                            <option value="12px">Liten</option>
+                            <option value="15px">Mellan</option>
+                            <option value="18px">Stor</option>
+                        </select>
+                    </span>
+                </label>
+                <div class="panel-row">
+                    <button id="resetZoomButton" class="button is-small is-fullwidth">
+                        <span class="icon"><i class="fa-solid fa-magnifying-glass-minus"></i></span>
+                        <span>Återställ zoom</span>
+                    </button>
+                </div>
+            </div>
+
+            <p class="has-text-centered is-size-7 has-text-grey mt-4">
+                Den här hemsidan bor på
+                <a href="https://github.com/vassaro/AIS">Github <i class="fa-brands fa-github"></i></a>
+            </p>
+        </div>
+    </aside>
 
     <div id="map"></div>
 
@@ -209,6 +196,7 @@
     </div>
 
     <script src="js/navbar.js"></script>
+    <script src="js/panel.js"></script>
 
 </body>
 
@@ -329,6 +317,16 @@
         applyAutoRefresh(ms);
     });
 
+    const labelSizeSelect = document.getElementById('labelSizeSelect');
+    labelSizeSelect.value = savedSettings.labelSize ?? '15px';
+    document.documentElement.style.setProperty('--label-size', labelSizeSelect.value);
+
+    labelSizeSelect.addEventListener('change', function (event) {
+        saveSettings({ labelSize: event.target.value });
+        document.documentElement.style.setProperty('--label-size', event.target.value);
+        scheduleLabelDeclutter(); // bigger names need more room
+    });
+
     lfmap.on('baselayerchange', function (e) {
        if (e.name === 'Satellit') {
            document.documentElement.style.setProperty('--accent-color', '#e1e1e1');
@@ -429,12 +427,23 @@
         }
     };
 
+    const CONNECTION_LABELS = { live: "Live", offline: "Frånkopplad" };
+
+    function setConnectionStatus(state) {
+        document.getElementById('connectionStatus').dataset.state = state;
+        document.getElementById('connectionLabel').textContent = CONNECTION_LABELS[state];
+    }
+
+    ws.onopen = () => setConnectionStatus('live');
+
     ws.onclose = (event) => {
         console.log("Connection closed", event.code, event.reason, event.wasClean)
+        setConnectionStatus('offline');
     };
 
     ws.onerror = () => {
         console.log("Connection closed due to error");
+        setConnectionStatus('offline');
         alert("Vi får ingen kontakt med Vässarö...");
     };
 
@@ -895,28 +904,51 @@
             }
         }
         updateShipTable();
+        scheduleLabelDeclutter();
     };
 
-    document.addEventListener('DOMContentLoaded', () => {
+    // LABEL COLLISIONS: nudge overlapping ship names up/down, hide the ones with no room.
+    // Vässarö + rescue boats go first so their names always win.
+    const LABEL_NUDGES = [0, -1, 1, -2, 2]; // in label heights
+    let labelUpdateQueued = false;
 
-        // Get all "navbar-burger" elements
-        const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
-
-        // Add a click event on each of them
-        $navbarBurgers.forEach(el => {
-            el.addEventListener('click', () => {
-
-                // Get the target from the "data-target" attribute
-                const target = el.dataset.target;
-                const $target = document.getElementById(target);
-
-                // Toggle the "is-active" class on both the "navbar-burger" and the "navbar-menu"
-                el.classList.toggle('is-active');
-                $target.classList.toggle('is-active');
-
-            });
+    function scheduleLabelDeclutter() {
+        if (labelUpdateQueued) return;
+        labelUpdateQueued = true;
+        requestAnimationFrame(() => {
+            labelUpdateQueued = false;
+            declutterLabels();
         });
-    });
+    }
+
+    function declutterLabels() {
+        const isPriority = name => getShipCategory(name) !== "default";
+        const names = Object.keys(shipMarkers).sort((a, b) => isPriority(b) - isPriority(a));
+        const placed = [];
+
+        names.forEach(name => {
+            const el = shipMarkers[name].getTooltip()?.getElement();
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const top = rect.top - (Number(el.dataset.nudge) || 0); // position without current nudge
+
+            const nudge = LABEL_NUDGES.map(n => n * (rect.height + 2)).find(dy => {
+                const box = { left: rect.left, right: rect.right, top: top + dy, bottom: top + dy + rect.height };
+                const free = !placed.some(p => box.left < p.right && box.right > p.left && box.top < p.bottom && box.bottom > p.top);
+                if (free) placed.push(box);
+                return free;
+            });
+
+            el.classList.toggle('label-hidden', nudge === undefined);
+            el.dataset.nudge = nudge ?? 0;
+            el.style.marginTop = `${nudge ?? 0}px`;
+        });
+    }
+
+    lfmap.on('zoomend', scheduleLabelDeclutter);
+
+    // tapping the map tucks the bottom sheet away on phones
+    lfmap.on('click', () => window.collapsePanelOnMobile());
 
     //Playback speeds in seconds between each step
     const PLAYBACK_SPEEDS = [0.05, 0.1, 0.5, 1, 2];
@@ -967,6 +999,7 @@
 
     async function loadShipHistory(mmsi, shipName, durationStr) {
         isHistoryMode = true;
+        document.body.classList.add('history-active');
         redrawAllMarkers();
 
         document.getElementById('history-title').innerText = `Laddar historik för ${formatName(shipName)}...`;
@@ -1362,6 +1395,7 @@
     function exitHistoryMode() {
         stopPlayback();
         isHistoryMode = false;
+        document.body.classList.remove('history-active');
         historyData = [];
 
         document.getElementById('history-controls').style.display = 'none';
@@ -1393,6 +1427,11 @@
             }
         });
 
+        document.getElementById("shipCount").textContent = allShips.length;
+        if (allShips.length === 0) {
+            shipTableBody.innerHTML = `<tr><td colspan="5" class="has-text-centered has-text-grey">Inga fartyg att visa</td></tr>`;
+        }
+
         movingShips.forEach(shipName => {
             const message = shipLastUpdate[shipName] || {};
             const row = createTableRow(shipName, message);
@@ -1402,7 +1441,7 @@
         if (showStationary && fixedPoints.length > 0) {
             const headerRow = document.createElement("tr");
             headerRow.innerHTML = `
-                <th colspan="5" style="text-align: center; background-color: #f5f5f5;">Fasta punkter</th>
+                <th colspan="5" class="has-text-grey">Fasta punkter</th>
             `;
             shipTableBody.appendChild(headerRow);
 
@@ -1417,16 +1456,14 @@
     function createTableRow(shipName, message) {
         const row = document.createElement("tr");
         row.innerHTML = `
-            <td>${formatName(shipName)}</td>
-            <td>${renderSpeed(message)}</td>
-            <td>${renderCourse(message)}</td>
-            <td>${renderTime(message)}</td>
-            <td>
-                <button class="button is-small" onclick="focusShip('${shipName}')">
-                    <i class="fa-solid fa-crosshairs"></i>
-                </button>
-            </td>
+            <td class="${getShipCategory(shipName) !== "default" ? "has-text-weight-semibold" : ""}">${formatName(shipName)}</td>
+            <td class="has-text-right">${renderSpeed(message)}</td>
+            <td class="has-text-right">${renderCourse(message)}</td>
+            <td class="has-text-right">${renderTime(message)}</td>
+            <td class="has-text-right has-text-link"><i class="fa-solid fa-crosshairs"></i></td>
         `;
+        row.style.cursor = "pointer";
+        row.addEventListener('click', () => focusShip(shipName));
         return row;
     }
 
@@ -1443,14 +1480,13 @@
         const marker = shipMarkers[shipName];
         if (marker) {
             lfmap.setView(marker.getLatLng(), lfmap.getZoom(), { animate: true });
-            burger = document.getElementsByClassName("navbar-burger")[0];
-            burger.click();
+            window.collapsePanelOnMobile();
         }
     }
 
     function renderSpeed(message) {
         if (message.speed) {
-            return (message.speed.toFixed(1) > 0.2 ? message.speed.toFixed(1) : 0) + " knop";
+            return (message.speed.toFixed(1) > 0.2 ? message.speed.toFixed(1) : 0) + " kn";
         } else {
             return "-";
         }
@@ -1458,7 +1494,9 @@
 
     function renderCourse(message) {
         if (message.speed) {
-            return message.speed.toFixed(1) > 0.2 ? message.course + "&deg;" : "-";
+            if (message.speed.toFixed(1) <= 0.2) return "-";
+            // small arrow turned to the heading
+            return `<i class="fa-solid fa-arrow-up" style="transform: rotate(${message.course}deg)"></i> ${message.course}&deg;`;
         } else {
             return "-";
         }
@@ -1489,6 +1527,8 @@
             return "-";
         }
     }
+
+    updateShipTable(); // show "Inga fartyg att visa" until the first positions arrive
 
 </script>
 

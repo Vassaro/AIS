@@ -2,12 +2,34 @@
     --accent-color: #003660;
     --text-color: #000000;
     --manifold-color: #e1e1e1;
-    --std-font: "Open Sans";
+    --std-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --tooptip-background: rgba(225, 225, 225, 0.5);
-    --popup-background: rgba(225, 225, 225, 0.9);
+    --popup-background: var(--surface);
     --ship-color: #d70077;
     --harbor-color: var(--accent-color);
     --weather-color: #0077d7;
+
+    color-scheme: light dark; /* native scrollbars and inputs follow the theme */
+
+    /* panel */
+    --surface: var(--bulma-scheme-main); /* same background as navbar, tables, inputs */
+    --border: rgba(10, 10, 10, 0.1);
+    --switch-on: #003660;
+    --nav-h: 3.25rem;
+    --sheet-peek: 64px;
+}
+
+/* dark mode follows the system (Bulma does the same now that data-theme is gone) */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text-color: #e6eef5;
+        /* lift Bulma's near-black backgrounds to a softer dark */
+        --bulma-scheme-main-l: 14%;
+        --bulma-scheme-main-bis-l: 17%;
+        --bulma-scheme-main-ter-l: 19%;
+        --border: rgba(255, 255, 255, 0.1);
+        --switch-on: #6aa6d8;
+    }
 }
 
 body {
@@ -20,6 +42,7 @@ html,
 body {
     height: 100%;
     width: 100vw;
+    overflow: hidden; /* Bulma forces a scrollbar on html otherwise */
     z-index: 0;
 }
 
@@ -58,8 +81,15 @@ body {
     padding-left: 5px;
     padding-right: 5px;
     box-shadow: none;
-    font-size: large;
+    font-size: var(--label-size, 15px); /* set from the panel */
     font-weight: bold;
+    transition: margin-top 0.2s ease, opacity 0.15s ease;
+}
+
+/* no room for this name at the current zoom, zooming in brings it back */
+.leaflet-tooltip.label-hidden {
+    opacity: 0 !important; /* Leaflet sets opacity inline */
+    pointer-events: none;
 }
 
 .locationIcon {
@@ -94,6 +124,7 @@ body {
     display: inline-block;
     width: 48px;
     height: 28px;
+    flex-shrink: 0;
     vertical-align: middle;
 }
 
@@ -134,7 +165,7 @@ body {
 }
 
 .custom-switch input:checked+.custom-slider {
-    background: #4fa3ff;
+    background: var(--switch-on);
 }
 
 .custom-switch input:checked+.custom-slider:before {
@@ -167,5 +198,155 @@ body {
 @media only screen and (max-width: 600px) {
     .hidden-mobile {
         display: none;
+    }
+}
+
+/* CONTROL PANEL: card on desktop, bottom sheet on phones */
+
+.control-panel {
+    position: fixed;
+    z-index: 35;
+    top: calc(var(--nav-h) + 12px);
+    right: 12px;
+    width: min(360px, calc(100vw - 24px));
+    max-height: calc(100vh - var(--nav-h) - 24px);
+    display: none;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.2);
+}
+
+.control-panel.is-open {
+    display: flex;
+}
+
+.panel-header {
+    flex-shrink: 0;
+    padding: 14px 16px 6px;
+}
+
+.sheet-grabber {
+    display: none;
+}
+
+.panel-body {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.5) transparent; /* no boxy track */
+    padding: 0 16px 16px;
+}
+
+.panel-section + .panel-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.panel-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    color: var(--bulma-text-strong); /* Bulma's default text is too grey in dark mode */
+    cursor: pointer;
+}
+
+.panel-row + .panel-row {
+    border-top: 1px solid var(--border);
+}
+
+.control-panel .table {
+    background: transparent;
+}
+
+.control-panel .table .has-text-right {
+    white-space: nowrap; /* keep "10.3 kn" and "1m 2s" on one line, names wrap instead */
+}
+
+/* quiet headers, so bold only marks our own boats in the list */
+.control-panel .table thead th {
+    font-weight: normal;
+    color: var(--bulma-text-weak);
+}
+
+@media (pointer: coarse) {
+    .desktop-only {
+        display: none !important;
+    }
+}
+
+/* history player takes over the screen */
+body.history-active .control-panel,
+body.history-active .panel-toggle {
+    display: none;
+}
+
+@media only screen and (max-width: 768px) {
+    .control-panel {
+        display: flex;
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        height: min(80vh, 640px);
+        max-height: none;
+        border-radius: 12px 12px 0 0;
+        transform: translateY(calc(100% - var(--sheet-peek)));
+        transition: transform 0.4s ease;
+    }
+
+    /* swiped all the way down: only the navbar button brings it back */
+    .control-panel.is-tucked {
+        transform: translateY(100%);
+    }
+
+    .control-panel.is-open {
+        transform: translateY(0);
+    }
+
+    .control-panel.is-dragging {
+        transition: none;
+    }
+
+    .panel-header {
+        height: var(--sheet-peek);
+        padding-top: 0;
+        touch-action: none;
+        cursor: grab;
+    }
+
+    .sheet-grabber {
+        display: block;
+        width: 100%;
+        height: 18px;
+        padding: 0;
+        border: 0;
+        background: none;
+        cursor: grab;
+    }
+
+    .sheet-grabber::before {
+        content: "";
+        display: block;
+        width: 36px;
+        height: 5px;
+        margin: 0 auto;
+        border-radius: 3px;
+        background: #b5b5b5;
+    }
+
+    /* keep layers/scale controls above the peeking sheet */
+    .leaflet-bottom {
+        bottom: var(--sheet-peek);
+    }
+
+    body.history-active .leaflet-bottom,
+    .control-panel.is-tucked ~ #map .leaflet-bottom {
+        bottom: 0;
     }
 }
