@@ -10,6 +10,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css"
@@ -43,7 +46,7 @@
     <aside id="controlPanel" class="control-panel">
         <header id="panelHeader" class="panel-header">
             <button class="sheet-grabber" aria-label="Visa eller dölj fartygslistan"></button>
-            <h2 class="is-size-5 has-text-weight-semibold">Fartyg <span id="shipCount" class="is-size-7 has-text-grey">0</span></h2>
+            <h2 class="is-size-5 has-text-weight-semibold">Fartyg <span id="shipCount" class="ship-count is-size-7 has-text-grey">0</span></h2>
         </header>
 
         <div class="panel-body">
@@ -146,8 +149,6 @@
         </div>
 
         <div class="field">
-
-        <div class="field">
             <div class="is-flex is-justify-content-space-between mb-1">
                 <label class="label" id="history-time-label">Tidpunkt</label>
                 <span class="tag is-light">Nu</span>
@@ -195,6 +196,7 @@
         </div>
     </div>
 
+    <script src="js/settings.js"></script>
     <script src="js/navbar.js"></script>
     <script src="js/panel.js"></script>
 
@@ -205,7 +207,12 @@
     // LEAFLET MAP
     const BASEMAPS = {
         OpenStreetMap: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</a>.'
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.'
+        }),
+        // OSM has no dark tiles; OpenFreeMap's dark style uses the same data, no key
+        'Mörk': L.maplibreGL({
+            style: 'https://tiles.openfreemap.org/styles/dark',
+            attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.'
         }),
         Satellit: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: '&copy; <a href="https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9">Esri, Maxar, Earthstar Geographics, and the GIS User Community</a>.'
@@ -217,19 +224,19 @@
     const NORTH_EAST = L.latLng(69.0, 24.5);
     const BOUNDS = L.latLngBounds(SOUTH_WEST, NORTH_EAST);
 
-    // PERSISTED SETTINGS (localStorage)
-    const SETTINGS_KEY = 'ais-settings';
-    function loadSettings() {
-        try {
-            return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
-        } catch (e) {
-            return {};
-        }
-    }
-    function saveSettings(patch) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), ...patch }));
-    }
+    // PERSISTED SETTINGS (localStorage, see js/settings.js)
     const savedSettings = loadSettings();
+
+    // wires a settings switch: restores its saved state, then saves and reports every flip
+    function bindSwitch(id, key, defaultValue, onChange) {
+        const input = document.getElementById(id);
+        input.checked = savedSettings[key] ?? defaultValue;
+        input.addEventListener('change', () => {
+            saveSettings({ [key]: input.checked });
+            onChange(input.checked);
+        });
+        return input.checked;
+    }
 
     // map starts centered on Strömsviken - Djuphamn
     const DEFAULT_CENTER = [60.24521, 18.68388];
@@ -262,42 +269,12 @@
     }).addTo(lfmap);
 
 
-    let showAllShips = savedSettings.showAllShips ?? false;
-    let showStationary = savedSettings.showStationary ?? false;
-    let showOfflineBoats = savedSettings.showOfflineBoats ?? true;
+    let showAllShips = bindSwitch('showAllShipsSwitch', 'showAllShips', false, on => { showAllShips = on; redrawAllMarkers(); });
+    let showStationary = bindSwitch('showStationarySwitch', 'showStationary', false, on => { showStationary = on; redrawAllMarkers(); });
+    let showOfflineBoats = bindSwitch('showOfflineBoatsSwitch', 'showOfflineBoats', true, on => { showOfflineBoats = on; redrawAllMarkers(); });
     const offlineBoats = new Set();
 
-    document.getElementById('showAllShipsSwitch').checked = showAllShips;
-    document.getElementById('showStationarySwitch').checked = showStationary;
-    document.getElementById('showOfflineBoatsSwitch').checked = showOfflineBoats;
-
-    document.getElementById('showAllShipsSwitch').addEventListener('change', function (event) {
-        showAllShips = event.target.checked;
-        saveSettings({ showAllShips });
-        redrawAllMarkers();
-    });
-
-    document.getElementById('showStationarySwitch').addEventListener('change', function (event) {
-        showStationary = event.target.checked;
-        saveSettings({ showStationary });
-        redrawAllMarkers();
-    });
-
-    document.getElementById('showOfflineBoatsSwitch').addEventListener('change', function (event) {
-        showOfflineBoats = event.target.checked;
-        saveSettings({ showOfflineBoats });
-        redrawAllMarkers();
-    });
-
-    let autoHideNavbar = savedSettings.autoHideNavbar ?? true;
-    document.getElementById('autoHideNavbarSwitch').checked = autoHideNavbar;
-    window.setNavbarAutoHideEnabled(autoHideNavbar);
-
-    document.getElementById('autoHideNavbarSwitch').addEventListener('change', function (event) {
-        autoHideNavbar = event.target.checked;
-        saveSettings({ autoHideNavbar });
-        window.setNavbarAutoHideEnabled(autoHideNavbar);
-    });
+    window.setNavbarAutoHideEnabled(bindSwitch('autoHideNavbarSwitch', 'autoHideNavbar', true, window.setNavbarAutoHideEnabled));
 
     let autoRefreshInterval = null;
     const autoRefreshSelect = document.getElementById('autoRefreshSelect');
@@ -328,6 +305,8 @@
     });
 
     lfmap.on('baselayerchange', function (e) {
+       // marker halos flip from white to dark on the dark basemap, see style.css
+       document.documentElement.classList.toggle('dark-basemap', e.name === 'Mörk');
        if (e.name === 'Satellit') {
            document.documentElement.style.setProperty('--accent-color', '#e1e1e1');
            if (historyPath) {
@@ -531,7 +510,7 @@
         className: "weatherDotIcon"
     });
 
-    let showWeather = savedSettings.showWeather ?? false;
+    let showWeather = false;           // set by the weather switch below
     let weatherStations = null;        // cached full station list, fetched once
     let weatherStationsLoading = null; // in-flight promise guard
     const weatherMarkers = {};         // keyed by station ID
@@ -676,9 +655,8 @@
         });
     }
 
-    document.getElementById('showWeatherSwitch').addEventListener('change', async function (event) {
-        showWeather = event.target.checked;
-        saveSettings({ showWeather });
+    async function setWeatherVisible(visible) {
+        showWeather = visible;
         if (showWeather) {
             lfmap.addLayer(weatherLayerGroup);
             await ensureWeatherStationsLoaded();
@@ -688,16 +666,15 @@
             }
         } else {
             lfmap.removeLayer(weatherLayerGroup);
-            Object.values(weatherMarkers).forEach(m => weatherLayerGroup.removeLayer(m));
+            weatherLayerGroup.clearLayers();
             Object.keys(weatherMarkers).forEach(id => delete weatherMarkers[id]);
             clearInterval(weatherRefreshInterval);
             weatherRefreshInterval = null;
         }
-    });
+    }
 
-    document.getElementById('showWeatherSwitch').checked = showWeather;
-    if (showWeather) {
-        document.getElementById('showWeatherSwitch').dispatchEvent(new Event('change'));
+    if (bindSwitch('showWeatherSwitch', 'showWeather', false, setWeatherVisible)) {
+        setWeatherVisible(true);
     }
 
     let weatherUpdateTimer = null;
@@ -716,8 +693,7 @@
     ]
 
     HARBORS.forEach(harbor => {
-        // console.log(harbor)
-        const harbourMarker = L.marker(harbor[1], {
+        L.marker(harbor[1], {
             icon: locationIcon,
             title: harbor[0]
         })
@@ -782,11 +758,11 @@
                 <tbody>
                     <tr>
                         <td>Fart:</td>
-                        <td>${message.speed + " knop" || "-"}</td>
+                        <td>${message.speed != null ? message.speed + " knop" : "-"}</td>
                     </tr>
                     <tr>
                         <td>Kurs:</td>
-                        <td>${message.course || "-"}&deg;</td>
+                        <td>${message.course != null ? message.course + "&deg;" : "-"}</td>
                     </tr>
                     <tr>
                         <td>Status:</td>
@@ -954,6 +930,7 @@
     const PLAYBACK_SPEEDS = [0.05, 0.1, 0.5, 1, 2];
 
     let historyData = [];
+    let historySegments = []; // index ranges of historyData without gaps, see splitAtGaps
     let historyLayerGroup = L.layerGroup();
     let isHistoryMode = false;
     let currentHistoryShipName = "";
@@ -969,6 +946,21 @@
 
     function getHistoryCutoffTime() {
         return Date.now() - (historyDurationHours * 60 * 60 * 1000);
+    }
+
+    const pointTime = p => new Date(p.timestamp).getTime();
+
+    // splits into { start, end } index ranges wherever two points are more than GAP_THRESHOLD apart
+    function splitAtGaps(data) {
+        const segments = [];
+        let start = 0;
+        for (let i = 1; i <= data.length; i++) {
+            if (i === data.length || pointTime(data[i]) - pointTime(data[i - 1]) > GAP_THRESHOLD) {
+                segments.push({ start, end: i - 1 });
+                start = i;
+            }
+        }
+        return segments;
     }
 
     function promptHistoryDuration(mmsi, shipName) {
@@ -1025,6 +1017,7 @@
                 }
                 return { ...p, timestamp: ts };
             }).filter(p => p.latitude != null && p.longitude != null);
+            historySegments = splitAtGaps(historyData);
 
             if (historyData.length === 0) {
                 alert("Ingen historik hittades.");
@@ -1047,35 +1040,14 @@
         document.getElementById('history-title').innerText = formatName(shipName);
         historyLayerGroup.clearLayers();
 
-        const durationHours = historyDurationHours;
-        const cutoffTime = getHistoryCutoffTime();;
+        const cutoffTime = getHistoryCutoffTime();
 
-        const visibleData = historyData.filter(p => new Date(p.timestamp).getTime() >= cutoffTime);
-
-        let segments = [];
-        let currentSegment = [];
-
-        if (visibleData.length > 0) {
-            // kick off the first segment
-            currentSegment.push([visibleData[0].latitude, visibleData[0].longitude]);
-
-            for (let i = 0; i < visibleData.length - 1; i++) {
-                const t1 = new Date(visibleData[i].timestamp).getTime();
-                const t2 = new Date(visibleData[i+1].timestamp).getTime();
-                const nextLatLng = [visibleData[i+1].latitude, visibleData[i+1].longitude];
-
-                if (t2 - t1 > GAP_THRESHOLD) {
-                    // close out this segment, start a new one
-                    segments.push(currentSegment);
-                    currentSegment = [nextLatLng];
-                } else {
-                    // no gap, keep going
-                    currentSegment.push(nextLatLng);
-                }
-            }
-            // push the last segment
-            segments.push(currentSegment);
-        }
+        // one line per stretch without gaps, points older than the cutoff dropped
+        const segments = historySegments
+            .map(seg => historyData.slice(seg.start, seg.end + 1)
+                .filter(p => pointTime(p) >= cutoffTime)
+                .map(p => [p.latitude, p.longitude]))
+            .filter(seg => seg.length > 0);
 
         const isSatellite = lfmap.hasLayer(BASEMAPS.Satellit);
         const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 110, 0, 0.4)';
@@ -1118,11 +1090,8 @@
 
     function updateSliderRange() {
         // recompute the visible time window
-        const durationHours = historyDurationHours;
-        const cutoffTime = getHistoryCutoffTime();
-        
         const nowMs = new Date().getTime();
-        const minMs = nowMs - (durationHours * 60 * 60 * 1000);
+        const minMs = nowMs - (historyDurationHours * 60 * 60 * 1000);
         
         const slider = document.getElementById('history-slider');
         const gradientBar = document.getElementById('slider-gradient');
@@ -1145,64 +1114,20 @@
         }
 
         const totalDuration = nowMs - minMs;
-        let gradientStops = [];
+        const gradientStops = [];
 
-        let segments = [];
-
-        let currentStart = new Date(historyData[0].timestamp).getTime();
-        let lastTime = currentStart;
-
-        if (currentStart > minMs) {
-            segments.push({ start: minMs, end: currentStart, type: 'gap' });
-        }
-
-        for (let i = 0; i < historyData.length - 1; i++) {
-            const t1 = new Date(historyData[i].timestamp).getTime();
-            const t2 = new Date(historyData[i+1].timestamp).getTime();
-            
-            if (t2 < minMs) {
-                currentStart = t2;
-                lastTime = t2;
-                continue;
-            }
-            
-            if (t1 > nowMs) break;
-
-            const diff = t2 - t1;
-
-            if (diff > GAP_THRESHOLD) {
-                if (t1 > currentStart) {
-                    segments.push({ start: currentStart, end: t1, type: 'data' });
-                }
-                segments.push({ start: t1, end: t2, type: 'gap' });
-                
-                currentStart = t2;
-            }
-            
-            lastTime = t2;
-        }
-
-        if (lastTime > currentStart) {
-             segments.push({ start: currentStart, end: lastTime, type: 'data' });
-        }
-
-        if (lastTime < nowMs) {
-            segments.push({ start: lastTime, end: nowMs, type: 'gap' });
-        }
-        
-        segments.forEach(seg => {
+        // green where there is data, grey in between (the first and last stop colors fill the ends)
+        historySegments.forEach(seg => {
             // clip segments to the visible range
-            const s = Math.max(minMs, Math.min(nowMs, seg.start));
-            const e = Math.max(minMs, Math.min(nowMs, seg.end));
+            const s = Math.max(minMs, Math.min(nowMs, pointTime(historyData[seg.start])));
+            const e = Math.max(minMs, Math.min(nowMs, pointTime(historyData[seg.end])));
 
-            if (s >= e) return;
+            if (s >= e) return; // single point, or outside the window
 
-            const p1 = ((s - minMs) / totalDuration) * 100;
-            const p2 = ((e - minMs) / totalDuration) * 100;
-            const color = seg.type === 'data' ? '#48c774' : '#ddd';
+            const p1 = (((s - minMs) / totalDuration) * 100).toFixed(2);
+            const p2 = (((e - minMs) / totalDuration) * 100).toFixed(2);
 
-            gradientStops.push(`${color} ${p1.toFixed(2)}%`);
-            gradientStops.push(`${color} ${p2.toFixed(2)}%`);
+            gradientStops.push(`#ddd ${p1}%`, `#48c774 ${p1}%`, `#48c774 ${p2}%`, `#ddd ${p2}%`);
         });
 
         if (gradientStops.length === 0) {
@@ -1309,18 +1234,8 @@
         }
     }
 
-    function updateHistoryUI(timeMs) {
-        const { point } = findNearestDataPoint(timeMs);
-        if(point) updateHistoryUI_Render(point);
-    }
-
     function getSegmentEndIndex(fromIndex) {
-        for (let i = fromIndex; i < historyData.length - 1; i++) {
-            const t1 = new Date(historyData[i].timestamp).getTime();
-            const t2 = new Date(historyData[i + 1].timestamp).getTime();
-            if (t2 - t1 > GAP_THRESHOLD) return i;
-        }
-        return historyData.length - 1;
+        return historySegments.find(seg => fromIndex <= seg.end)?.end ?? historyData.length - 1;
     }
 
     function togglePlayback() {
@@ -1397,6 +1312,7 @@
         isHistoryMode = false;
         document.body.classList.remove('history-active');
         historyData = [];
+        historySegments = [];
 
         document.getElementById('history-controls').style.display = 'none';
 
@@ -1486,7 +1402,8 @@
 
     function renderSpeed(message) {
         if (message.speed) {
-            return (message.speed.toFixed(1) > 0.2 ? message.speed.toFixed(1) : 0) + " kn";
+            const rounded = message.speed.toFixed(1);
+            return (Number(rounded) > 0.2 ? rounded : 0) + " kn";
         } else {
             return "-";
         }
@@ -1494,7 +1411,7 @@
 
     function renderCourse(message) {
         if (message.speed) {
-            if (message.speed.toFixed(1) <= 0.2) return "-";
+            if (Number(message.speed.toFixed(1)) <= 0.2) return "-";
             // small arrow turned to the heading
             return `<i class="fa-solid fa-arrow-up" style="transform: rotate(${message.course}deg)"></i> ${message.course}&deg;`;
         } else {

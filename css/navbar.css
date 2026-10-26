@@ -3,7 +3,9 @@
 }
 
 .navbar.is-fixed-top {
-    transition: transform 0.3s ease;
+    transition: transform 0.3s var(--ease-out);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
 }
 
 .navbar.is-fixed-top.navbar-hidden {
@@ -19,33 +21,52 @@
     display: inline-block;
     width: 8px;
     height: 8px;
+    margin-right: var(--space-2);
     border-radius: 50%;
     background: #d99a1e;
+    box-shadow: 0 0 0 3px rgba(217, 154, 30, 0.18); /* soft halo, reads as a status light */
+    transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
 [data-state="live"] .conn-dot {
     background: #1f9d55;
+    box-shadow: 0 0 0 3px rgba(31, 157, 85, 0.18);
 }
 
 [data-state="offline"] .conn-dot {
     background: #d0453b;
+    box-shadow: 0 0 0 3px rgba(208, 69, 59, 0.18);
 }
 
 .panel-toggle {
     width: 40px;
     height: 40px;
-    margin: auto 8px auto auto;
+    margin: auto var(--space-2) auto auto;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: inherit;
     font-size: 1.0625rem;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.panel-toggle:hover {
+    background: var(--hover-bg);
+}
+
+.panel-toggle:active {
+    transform: scale(0.94);
+}
+
+.panel-toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
 }
 
 .panel-toggle[aria-expanded="true"] {
-    background: var(--switch-on);
-    color: var(--surface);
+    background: var(--accent-soft);
+    color: var(--switch-on);
 }
 
 @media (max-width: 400px) {

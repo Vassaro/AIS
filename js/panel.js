@@ -9,31 +9,15 @@ const panelHeader = document.getElementById("panelHeader");
 const panelToggle = document.getElementById("panelToggle");
 const isMobile = () => window.matchMedia("(max-width: 768px)").matches;
 
-function loadPanelSettings() {
-    try {
-        return JSON.parse(localStorage.getItem("ais-settings") || "{}");
-    } catch (e) {
-        return {}; // ignore bad/missing localStorage
-    }
-}
-
-function savePanelSetting(patch) {
-    try {
-        localStorage.setItem("ais-settings", JSON.stringify({ ...loadPanelSettings(), ...patch }));
-    } catch (e) {
-        // ignore bad/missing localStorage
-    }
-}
-
 function setPanelOpen(open) {
     panel.classList.toggle("is-open", open);
     panelToggle.setAttribute("aria-expanded", String(open));
-    if (!isMobile()) savePanelSetting({ panelOpen: open });
+    if (!isMobile()) saveSettings({ panelOpen: open });
 }
 
 function setPanelTucked(tucked) {
     panel.classList.toggle("is-tucked", tucked);
-    savePanelSetting({ panelTucked: tucked });
+    saveSettings({ panelTucked: tucked });
 }
 
 function togglePanel() {
@@ -46,7 +30,7 @@ window.collapsePanelOnMobile = function () {
 };
 
 // Start closed on phones, open on desktop unless the user closed it last time.
-const savedPanel = loadPanelSettings();
+const savedPanel = loadSettings();
 panel.classList.toggle("is-open", !isMobile() && savedPanel.panelOpen !== false);
 panel.classList.toggle("is-tucked", savedPanel.panelTucked === true);
 panelToggle.setAttribute("aria-expanded", String(panel.classList.contains("is-open")));
@@ -113,4 +97,20 @@ panelHeader.addEventListener("pointercancel", endDrag);
 panelHeader.addEventListener("click", () => {
     if (isMobile() && !wasDragged) togglePanel();
     wasDragged = false;
+});
+
+// Tapping outside the open panel closes it (on phones: back to the strip or tucked state).
+// Only real taps count, so panning the map leaves the panel alone.
+let outsideDown = null;
+
+document.addEventListener("pointerdown", (e) => {
+    const outside = !panel.contains(e.target) && !panelToggle.contains(e.target);
+    outsideDown = outside && panel.classList.contains("is-open") ? { x: e.clientX, y: e.clientY } : null;
+});
+
+document.addEventListener("pointerup", (e) => {
+    if (!outsideDown) return;
+    const moved = Math.hypot(e.clientX - outsideDown.x, e.clientY - outsideDown.y);
+    outsideDown = null;
+    if (moved < 8) setPanelOpen(false);
 });

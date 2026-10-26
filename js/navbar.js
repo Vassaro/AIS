@@ -11,24 +11,29 @@ const HIDE_DELAY_MS = 250; // hide this long after mouse leaves the proximity zo
 
 let autoHideEnabled = !isTouchDevice;
 if (autoHideEnabled) {
-    try {
-        const saved = JSON.parse(localStorage.getItem("ais-settings") || "{}");
-        if (typeof saved.autoHideNavbar === "boolean") autoHideEnabled = saved.autoHideNavbar;
-    } catch (e) {
-        // ignore bad/missing localStorage
-    }
+    const saved = loadSettings();
+    if (typeof saved.autoHideNavbar === "boolean") autoHideEnabled = saved.autoHideNavbar;
 }
 
 let hideTimer = null;
 
+// The control panel card hangs below the navbar on desktop, so it hides with it
+const controlPanel = document.getElementById("controlPanel");
+
+function isHoveringChrome() {
+    return navbar.matches(":hover") || controlPanel.matches(":hover");
+}
+
 function show() {
     navbar.classList.remove("navbar-hidden");
+    controlPanel.classList.remove("panel-hidden");
 }
 
 function hide() {
     if (!autoHideEnabled) return;
-    if (navbar.matches(":hover")) return;
+    if (isHoveringChrome()) return;
     navbar.classList.add("navbar-hidden");
+    controlPanel.classList.add("panel-hidden");
 }
 
 function scheduleHide() {
@@ -63,7 +68,7 @@ if (!isTouchDevice) {
 
     function handlePointerY(y) {
         if (!autoHideEnabled) return;
-        if (y <= PROXIMITY_PX) {
+        if (y <= PROXIMITY_PX || controlPanel.matches(":hover")) {
             show();
             clearTimeout(hideTimer);
         } else {
@@ -83,6 +88,9 @@ if (!isTouchDevice) {
 
     // Re-hide promptly once cursor actually leaves the navbar
     navbar.addEventListener("mouseleave", () => {
+        if (autoHideEnabled) scheduleHide();
+    });
+    controlPanel.addEventListener("mouseleave", () => {
         if (autoHideEnabled) scheduleHide();
     });
 }

@@ -1,11 +1,9 @@
 :root {
     --accent-color: #003660;
     --text-color: #000000;
-    --manifold-color: #e1e1e1;
     --std-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --tooptip-background: rgba(225, 225, 225, 0.5);
+    --tooptip-background: rgba(255, 255, 255, 0.6);
     --popup-background: var(--surface);
-    --ship-color: #d70077;
     --harbor-color: var(--accent-color);
     --weather-color: #0077d7;
 
@@ -15,8 +13,26 @@
     --surface: var(--bulma-scheme-main); /* same background as navbar, tables, inputs */
     --border: rgba(10, 10, 10, 0.1);
     --switch-on: #003660;
+    --switch-off: rgba(120, 120, 128, 0.24);
     --nav-h: 3.25rem;
     --sheet-peek: 64px;
+
+    /* shared scales, so every surface lines up */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --shadow-sm: 0 1px 2px rgba(10, 20, 40, 0.08), 0 1px 1px rgba(10, 20, 40, 0.04);
+    --shadow-md: 0 8px 24px -6px rgba(10, 20, 40, 0.16), 0 2px 6px rgba(10, 20, 40, 0.06);
+    --accent-soft: rgba(0, 54, 96, 0.08);
+    --hover-bg: rgba(10, 20, 40, 0.04);
+    --text-weak: var(--bulma-text-weak);
+    --focus-ring: 0 0 0 3px rgba(0, 54, 96, 0.25);
+    --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* dark mode follows the system (Bulma does the same now that data-theme is gone) */
@@ -29,13 +45,20 @@
         --bulma-scheme-main-ter-l: 19%;
         --border: rgba(255, 255, 255, 0.1);
         --switch-on: #6aa6d8;
-    }
-}
+        --switch-off: rgba(120, 120, 128, 0.36);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 8px 24px -6px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.25);
+        --accent-soft: rgba(106, 166, 216, 0.16);
+        --hover-bg: rgba(255, 255, 255, 0.05);
+        --focus-ring: 0 0 0 3px rgba(106, 166, 216, 0.4);
+        --tooptip-background: rgba(28, 32, 38, 0.5);
+    }}
 
 body {
     margin: 0;
     padding: 0;
     font-family: var(--std-font);
+    -webkit-font-smoothing: antialiased;
 }
 
 html,
@@ -55,16 +78,52 @@ body {
 .shipPopup .leaflet-popup-content-wrapper {
     background: var(--popup-background);
     color: var(--text-color);
-    font-size: 16px;
-    line-height: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    font-size: 15px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+}
+
+.shipPopup .leaflet-popup-content {
+    margin: var(--space-3) var(--space-4);
 }
 
 .shipPopup .leaflet-popup-content-wrapper a {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--switch-on);
 }
 
 .shipPopup .leaflet-popup-tip {
     background: var(--popup-background);
+    box-shadow: none;
+}
+
+.shipPopup .leaflet-popup-close-button {
+    top: var(--space-1);
+    right: var(--space-1);
+    color: var(--text-weak);
+}
+
+.shipPopup table thead td {
+    padding-bottom: var(--space-2);
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+}
+
+.shipPopup table tbody td {
+    padding: 2px 0;
+}
+
+/* labels quiet, values strong */
+.shipPopup table tbody td:first-child:not([colspan]) {
+    padding-right: var(--space-3);
+    color: var(--text-weak);
+    white-space: nowrap;
+}
+
+.shipPopup .button {
+    border-radius: var(--radius-sm);
 }
 
 .leaflet-tooltip-left:before,
@@ -74,15 +133,14 @@ body {
 
 .leaflet-tooltip {
     background-color: var(--tooptip-background);
-    border: 1px solid var(--tooptip-background);
-    border-radius: 10px;
-    padding: 0px;
+    color: var(--text-color);
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: 0 5px;
     margin: 0px;
-    padding-left: 5px;
-    padding-right: 5px;
     box-shadow: none;
     font-size: var(--label-size, 15px); /* set from the panel */
-    font-weight: bold;
+    font-weight: 500;
     transition: margin-top 0.2s ease, opacity 0.15s ease;
 }
 
@@ -119,6 +177,20 @@ body {
          1px  1px 0 #000;
 }
 
+/* white halo instead of a hard outline, keeps the pin readable on any tile */
+.locationIcon i {
+    filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+/* white halo glows on the dark basemap: white pin, dark halo instead */
+:root.dark-basemap {
+    --harbor-color: #e1e1e1; /* same as on Satellit */
+}
+
+.dark-basemap .locationIcon i {
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.8)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
 .custom-switch {
     position: relative;
     display: inline-block;
@@ -146,9 +218,9 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: #ccc;
+    background: var(--switch-off);
     border-radius: 28px;
-    transition: background 0.2s;
+    transition: background 0.2s ease;
 }
 
 .custom-slider:before {
@@ -159,9 +231,9 @@ body {
     left: 3px;
     bottom: 3px;
     background: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    border-radius: 11px;
+    transition: transform 0.25s var(--ease-out), width 0.15s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
 }
 
 .custom-switch input:checked+.custom-slider {
@@ -172,9 +244,68 @@ body {
     transform: translateX(20px);
 }
 
+/* knob stretches while pressed, like a physical toggle */
+.panel-row:active .custom-slider:before {
+    width: 27px;
+}
+
+.panel-row:active .custom-switch input:checked+.custom-slider:before {
+    transform: translateX(15px);
+}
+
+.custom-switch input:focus-visible+.custom-slider {
+    box-shadow: var(--focus-ring);
+}
+
+/* Bulma controls inside the panel follow the same radius and focus ring */
+.control-panel .select select,
+.control-panel .button {
+    border-color: var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.control-panel .select:not(.is-multiple):not(.is-loading)::after {
+    border-color: var(--text-weak);
+}
+
+.control-panel .select select:focus-visible,
+.control-panel .button:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.control-panel .button:hover {
+    background: var(--hover-bg);
+}
+
+.control-panel .button:active {
+    transform: scale(0.98);
+}
+
+.control-panel p a {
+    color: var(--text-weak);
+}
+
+.control-panel p a:hover {
+    color: var(--switch-on);
+}
+
 .leaflet-control-scale {
     bottom: 15px;
 }
+
+@media (prefers-color-scheme: dark) {
+    .leaflet-control-scale-line {
+        background: rgba(78, 83, 90, 0.8);
+        color: var(--text-color);
+        border-color: #8a8f96;
+        text-shadow: none; /* Leaflet's white shadow doubles light text */
+    }
+}
+
 
 .leaflet-control-layers-toggle {
     width: 30px !important;
@@ -182,7 +313,15 @@ body {
     background-size: 18px 18px !important;
 }
 
-.leaflet-control-layers {
+/* same surface language as the panel */
+.leaflet-control-layers,
+.leaflet-touch .leaflet-control-layers {
+    background: var(--surface);
+    color: var(--text-color);
+    border: 1px solid var(--border) !important; /* Leaflet's touch style adds a thick border */
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    font-family: var(--std-font);
     font-size: 12px !important;
 }
 
@@ -190,15 +329,33 @@ body {
     margin-bottom: 0 !important;
 }
 
-.leaflet-touch .leaflet-control-layers,
-.leaflet-control-layers-expanded {
-    padding: 4px 8px !important;
+.leaflet-control-layers label {
+    padding: 2px 0;
+    cursor: pointer;
 }
 
-@media only screen and (max-width: 600px) {
-    .hidden-mobile {
-        display: none;
+.leaflet-control-layers input {
+    accent-color: var(--switch-on);
+}
+
+.leaflet-touch .leaflet-control-layers,
+.leaflet-control-layers-expanded {
+    padding: var(--space-1) var(--space-2) !important;
+}
+
+/* Leaflet's layer icon is a dark PNG, flip it so it shows on the dark surface */
+@media (prefers-color-scheme: dark) {
+    .leaflet-control-layers-toggle {
+        filter: invert(0.9);
     }
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+    color: var(--text-color);
+}
+
+.leaflet-control-attribution {
+    font-family: var(--std-font);
 }
 
 /* CONTROL PANEL: card on desktop, bottom sheet on phones */
@@ -206,25 +363,59 @@ body {
 .control-panel {
     position: fixed;
     z-index: 35;
-    top: calc(var(--nav-h) + 12px);
-    right: 12px;
-    width: min(360px, calc(100vw - 24px));
-    max-height: calc(100vh - var(--nav-h) - 24px);
+    top: calc(var(--nav-h) + var(--space-3));
+    right: var(--space-3);
+    width: min(360px, calc(100vw - 2 * var(--space-3)));
+    max-height: calc(100vh - var(--nav-h) - 2 * var(--space-3));
     display: none;
     flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.2);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    overflow: hidden; /* keep the scrolling body inside the rounded corners */
 }
 
 .control-panel.is-open {
     display: flex;
 }
 
+/* desktop: slides away together with the auto-hidden navbar */
+@media only screen and (min-width: 769px) {
+    .control-panel {
+        transition: transform 0.3s var(--ease-out), opacity 0.3s var(--ease-out);
+    }
+
+    .control-panel.panel-hidden {
+        transform: translateY(calc(-100% - var(--nav-h) - var(--space-3)));
+        opacity: 0;
+        pointer-events: none;
+    }
+}
+
 .panel-header {
     flex-shrink: 0;
-    padding: 14px 16px 6px;
+    padding: var(--space-4) var(--space-4) var(--space-2);
+}
+
+.panel-header h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+/* count as a quiet pill next to the title */
+.ship-count {
+    min-width: 1.75em;
+    padding: 1px var(--space-2);
+    border-radius: 999px;
+    background: var(--hover-bg);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    text-align: center;
 }
 
 .sheet-grabber {
@@ -236,12 +427,12 @@ body {
     overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(128, 128, 128, 0.5) transparent; /* no boxy track */
-    padding: 0 16px 16px;
+    padding: 0 var(--space-4) var(--space-4);
 }
 
 .panel-section + .panel-section {
-    margin-top: 8px;
-    padding-top: 8px;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
 }
 
@@ -249,7 +440,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
     min-height: 44px;
     color: var(--bulma-text-strong); /* Bulma's default text is too grey in dark mode */
     cursor: pointer;
@@ -261,6 +452,18 @@ body {
 
 .control-panel .table {
     background: transparent;
+    font-variant-numeric: tabular-nums; /* speeds and times line up in columns */
+}
+
+.control-panel .table td,
+.control-panel .table th {
+    border-color: var(--border);
+    padding: var(--space-2) var(--space-1);
+    vertical-align: middle;
+}
+
+.control-panel .table.is-hoverable tbody tr:not(.is-selected):hover {
+    background: var(--hover-bg);
 }
 
 .control-panel .table .has-text-right {
@@ -270,7 +473,10 @@ body {
 /* quiet headers, so bold only marks our own boats in the list */
 .control-panel .table thead th {
     font-weight: normal;
-    color: var(--bulma-text-weak);
+    color: var(--text-weak);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 @media (pointer: coarse) {
@@ -295,9 +501,10 @@ body.history-active .panel-toggle {
         width: auto;
         height: min(80vh, 640px);
         max-height: none;
-        border-radius: 12px 12px 0 0;
+        border-width: 1px 0 0;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         transform: translateY(calc(100% - var(--sheet-peek)));
-        transition: transform 0.4s ease;
+        transition: transform 0.45s var(--ease-out);
     }
 
     /* swiped all the way down: only the navbar button brings it back */
@@ -337,7 +544,7 @@ body.history-active .panel-toggle {
         height: 5px;
         margin: 0 auto;
         border-radius: 3px;
-        background: #b5b5b5;
+        background: var(--switch-off);
     }
 
     /* keep layers/scale controls above the peeking sheet */
@@ -348,5 +555,21 @@ body.history-active .panel-toggle {
     body.history-active .leaflet-bottom,
     .control-panel.is-tucked ~ #map .leaflet-bottom {
         bottom: 0;
+    }
+}
+
+/* reduced motion: keep state changes, drop the movement */
+@media (prefers-reduced-motion: reduce) {
+    .control-panel,
+    .navbar.is-fixed-top,
+    .custom-slider:before,
+    .panel-toggle,
+    .control-panel .button {
+        transition-duration: 0.01ms !important;
+    }
+
+    .panel-toggle:active,
+    .control-panel .button:active {
+        transform: none;
     }
 }
