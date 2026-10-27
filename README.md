@@ -72,7 +72,7 @@ Sjömilsskala visas alltid i nedre högra hörnet.
 | Ikoner | [Font Awesome](https://fontawesome.com/) 7.0 |
 | Kartstöd | leaflet-rotatedmarker, leaflet-geometryutil |
 | Sjömilsskala | Lokal `leaflet.nauticalscale.js` |
-| Data | WebSocket + REST API via `jumpgate.vassaro.net` |
+| Data | WebSocket + REST API |
 
 ## Kom igång
 Sidan nås [här](https://vassaro.github.io/AIS).

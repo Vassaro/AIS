@@ -333,7 +333,11 @@
     }
 
     // WEB SOCKET
-    const ws = new WebSocket("wss://ais.vassaro.net/");
+    const WS_URL = "wss://ais.vassaro.net/";
+    const MAX_RETRIES = 3;
+    let ws;
+    let retries = 0;
+    let retryTimer;
 
     var shipLastUpdate = {};
 
@@ -380,7 +384,10 @@
         }
     }
 
-    ws.onmessage = (event) => {
+    function handleMessage(event) {
+        // Engine.IO ping → pong, otherwise server drops connection
+        if (event.data === '2') return ws.send('3');
+        if (!event.data.startsWith('42')) return;
         if (event.data.startsWith('42["vesselPositions-init"')) {
             const vessels = JSON.parse(event.data.toString().slice(2))[1];
             vessels.forEach(message => {
@@ -404,7 +411,7 @@
             }
             createMarker(message);
         }
-    };
+    }
 
     const CONNECTION_LABELS = { live: "Live", offline: "Frånkopplad" };
 
@@ -413,18 +420,39 @@
         document.getElementById('connectionLabel').textContent = CONNECTION_LABELS[state];
     }
 
-    ws.onopen = () => setConnectionStatus('live');
+    function connect() {
+        ws = new WebSocket(WS_URL);
+        ws.onmessage = handleMessage;
+        ws.onopen = () => {
+            retries = 0;
+            setConnectionStatus('live');
+        };
+        ws.onclose = (event) => {
+            console.log("Connection closed", event.code, event.reason, event.wasClean)
+            setConnectionStatus('offline');
+            if (retries < MAX_RETRIES) {
+                retryTimer = setTimeout(connect, 1000 * 2 ** retries++);
+            } else {
+                alert("Vi får ingen kontakt med Vässarö...");
+            }
+        };
+        // onclose fires after onerror, retry handled there
+        ws.onerror = () => console.log("Connection error");
+    }
 
-    ws.onclose = (event) => {
-        console.log("Connection closed", event.code, event.reason, event.wasClean)
-        setConnectionStatus('offline');
-    };
+    function reconnectIfDead() {
+        if (ws.readyState !== WebSocket.CLOSED) return;
+        clearTimeout(retryTimer);
+        retries = 0;
+        connect();
+    }
 
-    ws.onerror = () => {
-        console.log("Connection closed due to error");
-        setConnectionStatus('offline');
-        alert("Vi får ingen kontakt med Vässarö...");
-    };
+    window.addEventListener('online', reconnectIfDead);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) reconnectIfDead();
+    });
+
+    connect();
 
 
     const BOAT_COLORS = {
