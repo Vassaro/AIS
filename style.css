@@ -491,6 +491,184 @@ body.history-active .panel-toggle {
     display: none;
 }
 
+/* history modals open from the history card, so they must sit above it */
+#history-duration-modal,
+#multi-trail-modal {
+    z-index: 1100;
+}
+
+/* history player card, bottom center by default, see js/historyCard.js */
+#history-controls {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: 90%;
+    max-width: 600px;
+}
+
+/* dragged somewhere on desktop, left/top set from JS */
+#history-controls.is-floating {
+    bottom: auto;
+    transform: none;
+    transition: left 0.2s var(--ease-out), top 0.2s var(--ease-out);
+}
+
+#history-controls.is-dragging {
+    transition: none;
+    box-shadow: var(--shadow-md);
+}
+
+#history-controls.is-minimized {
+    width: auto;
+    max-width: min(90%, 460px);
+    padding: var(--space-2) var(--space-3);
+}
+
+.history-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+#history-controls.is-minimized .history-card-header {
+    margin-bottom: 0;
+}
+
+.history-card-header .title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#history-controls.is-minimized .title {
+    font-size: 1rem;
+}
+
+.history-card-header .buttons {
+    flex: none;
+    flex-wrap: nowrap;
+}
+
+#history-mini-time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+#history-controls .history-mini-only,
+#history-controls.is-minimized .history-full-only,
+#history-controls.is-minimized .history-card-body {
+    display: none;
+}
+
+#history-controls.is-minimized .history-mini-only {
+    display: inline-flex;
+}
+
+@media (min-width: 769px) {
+    .history-card-header {
+        cursor: grab;
+        user-select: none;
+    }
+
+    #history-controls.is-dragging .history-card-header {
+        cursor: grabbing;
+    }
+}
+
+/* one row per boat under the history slider */
+.history-legend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 9.5rem; /* ~5 boats, then scroll */
+    overflow-y: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.history-legend-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 2px var(--space-1);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.history-legend-row:hover {
+    background: var(--hover-bg);
+}
+
+/* boat has no data at the slider time */
+.history-legend-row.is-inactive {
+    opacity: 0.4;
+}
+
+.history-legend-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-legend-row .tag {
+    min-width: 4.5em;
+}
+
+.trail-dot {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+}
+
+/* multi trail picker */
+.trail-picker-list {
+    max-height: min(50vh, 360px);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.trail-picker-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    cursor: pointer;
+    color: var(--bulma-text-strong);
+}
+
+.trail-picker-row + .trail-picker-row {
+    border-top: 1px solid var(--border);
+}
+
+.trail-picker-row:hover {
+    background: var(--hover-bg);
+}
+
+.trail-picker-row:has(input:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.trail-picker-name {
+    flex: 1;
+}
+
+.trail-picker-mmsi {
+    font-size: 0.75rem;
+    color: var(--text-weak);
+    font-variant-numeric: tabular-nums;
+}
+
 @media only screen and (max-width: 768px) {
     .control-panel {
         display: flex;
@@ -564,7 +742,8 @@ body.history-active .panel-toggle {
     .navbar.is-fixed-top,
     .custom-slider:before,
     .panel-toggle,
-    .control-panel .button {
+    .control-panel .button,
+    #history-controls {
         transition-duration: 0.01ms !important;
     }
 

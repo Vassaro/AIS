@@ -105,6 +105,12 @@
                     </span>
                 </label>
                 <div class="panel-row">
+                    <button class="button is-small is-fullwidth" onclick="openMultiTrailPicker()">
+                        <span class="icon"><i class="fa-solid fa-route"></i></span>
+                        <span>Flera spår</span>
+                    </button>
+                </div>
+                <div class="panel-row">
                     <button id="resetZoomButton" class="button is-small is-fullwidth">
                         <span class="icon"><i class="fa-solid fa-magnifying-glass-minus"></i></span>
                         <span>Återställ zoom</span>
@@ -140,14 +146,53 @@
         <button class="modal-close is-large" aria-label="close" onclick="closeDurationModal()"></button>
     </div>
 
-    <div id="history-controls" class="box" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 90%; max-width: 600px;">
-        <div class="is-flex is-justify-content-space-between is-align-items-center mb-2">
+    <div id="multi-trail-modal" class="modal">
+        <div class="modal-background" onclick="closeMultiTrailPicker()"></div>
+        <div class="modal-content">
+            <div class="box trail-picker">
+                <h3 class="title is-5 mb-1">Flera spår</h3>
+                <p class="is-size-7 has-text-grey mb-3">Välj båtar att visa på samma tidslinje.</p>
+                <div id="trail-picker-durations" class="buttons has-addons is-centered mb-3">
+                    <button class="button is-small" data-duration="12h">12h</button>
+                    <button class="button is-small" data-duration="24h">24h</button>
+                    <button class="button is-small" data-duration="48h">48h</button>
+                    <button class="button is-small" data-duration="exact">Exakt 48h</button>
+                </div>
+                <input id="trail-picker-search" class="input is-small mb-2" type="search" placeholder="Sök namn eller MMSI">
+                <div id="trail-picker-list" class="trail-picker-list"></div>
+                <div class="is-flex is-justify-content-space-between is-align-items-center mt-3">
+                    <span id="trail-picker-count" class="is-size-7 has-text-grey"></span>
+                    <div class="buttons mb-0">
+                        <button class="button is-small is-light mb-0" onclick="clearTrailPicker()">Rensa</button>
+                        <button id="trail-picker-confirm" class="button is-small is-link mb-0" onclick="confirmMultiTrail()">Visa spår</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="modal-close is-large" aria-label="close" onclick="closeMultiTrailPicker()"></button>
+    </div>
+
+    <div id="history-controls" class="box" style="display: none;">
+        <div id="history-card-header" class="history-card-header" title="Dra för att flytta, dubbelklicka för att återställa">
             <h3 class="title is-5 is-marginless" id="history-title">Historik</h3>
-            <button class="button is-small is-danger" onclick="exitHistoryMode()">
-                <i class="fa-solid fa-times"></i>&nbsp;Stäng
-            </button>
+            <span id="history-mini-time" class="history-mini-only is-size-7 has-text-grey"></span>
+            <div class="buttons mb-0">
+                <button class="button is-small is-primary mb-0 history-mini-only" id="mini-play-button" onclick="togglePlayback()" aria-label="Spela upp">
+                    <i class="fa-solid fa-play"></i>
+                </button>
+                <button class="button is-small mb-0 history-full-only" onclick="stopPlayback(); openMultiTrailPicker()" aria-label="Lägg till båt">
+                    <i class="fa-solid fa-plus"></i><span class="is-hidden-mobile">&nbsp;Lägg till båt</span>
+                </button>
+                <button class="button is-small mb-0" id="history-minimize-button" onclick="toggleHistoryCardMinimized()" aria-label="Förminska">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <button class="button is-small is-danger mb-0" onclick="exitHistoryMode()" aria-label="Stäng">
+                    <i class="fa-solid fa-times"></i><span class="is-hidden-mobile">&nbsp;Stäng</span>
+                </button>
+            </div>
         </div>
 
+        <div class="history-card-body">
         <div class="field">
             <div class="is-flex is-justify-content-space-between mb-1">
                 <label class="label" id="history-time-label">Tidpunkt</label>
@@ -188,17 +233,14 @@
                 <div id="speed-buttons" class="tags mb-0" style="gap: 4px;"></div>
             </div>
         </div>
-        <div class="tags has-addons is-justify-content-center">
-            <span class="tag">Fart</span>
-            <span class="tag is-primary" id="history-speed">-</span>
-            <span class="tag">Kurs</span>
-            <span class="tag is-info" id="history-course">-</span>
+        <div id="history-legend" class="history-legend"></div>
         </div>
     </div>
 
     <script src="js/settings.js"></script>
     <script src="js/navbar.js"></script>
     <script src="js/panel.js"></script>
+    <script src="js/historyCard.js"></script>
 
 </body>
 
@@ -307,17 +349,12 @@
     lfmap.on('baselayerchange', function (e) {
        // marker halos flip from white to dark on the dark basemap, see style.css
        document.documentElement.classList.toggle('dark-basemap', e.name === 'Mörk');
-       if (e.name === 'Satellit') {
-           document.documentElement.style.setProperty('--accent-color', '#e1e1e1');
-           if (historyPath) {
-               historyPath.setStyle({ color: 'rgba(255, 255, 255, 0.4)' });
-           } 
-       } else {
-           document.documentElement.style.setProperty('--accent-color', '#003660');
-           if (historyPath) {
-               historyPath.setStyle({ color: 'rgba(0, 110, 0, 0.4)' });
-           } 
-       }
+       const isSatellite = e.name === 'Satellit';
+       document.documentElement.style.setProperty('--accent-color', isSatellite ? '#e1e1e1' : '#003660');
+       // only uncolored (single boat) trails follow the basemap
+       historyTracks.forEach(track => {
+           if (!track.color && track.path) track.path.setStyle({ color: defaultTrailColor(isSatellite) });
+       });
     });
 
     function redrawAllMarkers() {
@@ -341,15 +378,13 @@
 
     var shipLastUpdate = {};
 
-    let historyMarker = null;
-    let historyPath = null;
-    let historyVector = null;
+    // API sends MMSI as float ("265575840.0"), WS as int
+    const normalizeMmsi = mmsi => String(Math.round(parseFloat(mmsi)) || 0);
 
     function resolveShipName(entity) {
         const rawName = entity.name && entity.name.trim();
         if (rawName) return rawName;
-        const mmsiStr = String(Math.round(parseFloat(entity.mmsi)) || 0);
-        return MMSI_NAME_MAP[mmsiStr] || null;
+        return MMSI_NAME_MAP[normalizeMmsi(entity.mmsi)] || null;
     }
 
     async function fetchLatestAndAddOfflineBoats() {
@@ -957,16 +992,20 @@
     //Playback speeds in seconds between each step
     const PLAYBACK_SPEEDS = [0.05, 0.1, 0.5, 1, 2];
 
-    let historyData = [];
-    let historySegments = []; // index ranges of historyData without gaps, see splitAtGaps
+    // one color per boat in multi trail, also caps how many boats can be picked
+    const TRAIL_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#9a6324', '#ffe119'];
+
+    let historyTracks = [];   // { mmsi, name, color, data, segments, marker, path, vector, legendRow }, color only in multi trail
+    let historyTimeline = []; // sorted unique timestamps (ms) of all tracks, what the slider steps through
     let historyLayerGroup = L.layerGroup();
     let isHistoryMode = false;
-    let currentHistoryShipName = "";
+    let historyLoadId = 0; // bumped on every load/exit, so a slow fetch can't draw over a newer one
     let isPlaying = false;
     let playbackInterval = null;
     let playbackSpeedIndex = 1; // default: index 1 = 1s
 
     let historyDurationHours = 12;
+    let historyDurationStr = '12h';
     let pendingHistoryMmsi = null;
     let pendingHistoryShipName = "";
 
@@ -976,7 +1015,11 @@
         return Date.now() - (historyDurationHours * 60 * 60 * 1000);
     }
 
+    const durationToHours = durationStr => durationStr === 'exact' ? 48 : parseInt(durationStr.replace('h', ''));
+
     const pointTime = p => new Date(p.timestamp).getTime();
+
+    const defaultTrailColor = isSatellite => isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 110, 0, 0.4)';
 
     // splits into { start, end } index ranges wherever two points are more than GAP_THRESHOLD apart
     function splitAtGaps(data) {
@@ -1009,118 +1052,151 @@
 
     function startHistoryLoading(durationStr) {
         closeDurationModal();
-        if (durationStr === 'exact') {
-            historyDurationHours = 48;
-        } else {
-            historyDurationHours = parseInt(durationStr.replace('h', ''));
-        }
-        loadShipHistory(pendingHistoryMmsi, pendingHistoryShipName, durationStr);
+        loadHistoryTracks([{ mmsi: pendingHistoryMmsi, name: pendingHistoryShipName }], durationStr);
     }
 
-    async function loadShipHistory(mmsi, shipName, durationStr) {
-        isHistoryMode = true;
-        document.body.classList.add('history-active');
-        redrawAllMarkers();
+    async function fetchTrackData(mmsi, durationStr) {
+        const url = durationStr === 'exact'
+            ? `https://ais.vassaro.net/api/data/${mmsi}`
+            : `https://ais.vassaro.net/api/data/${durationStr}/${mmsi}`;
 
-        document.getElementById('history-title').innerText = `Laddar historik för ${formatName(shipName)}...`;
-        document.getElementById('history-controls').style.display = 'block';
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Kunde inte hämta data");
 
-        try {
-            let url;
-            if (durationStr === 'exact') {
-                url = `https://ais.vassaro.net/api/data/${mmsi}`;
-            } else {
-                url = `https://ais.vassaro.net/api/data/${durationStr}/${mmsi}`;
+        const data = await response.json();
+        return data.map(p => {
+            let ts = p.timestamp || p.minute;
+            if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
+                ts += 'Z';
             }
-            
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("Kunde inte hämta data");
-
-            let data = await response.json();
-
-            historyData = data.map(p => {
-                let ts = p.timestamp || p.minute;
-                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
-                    ts += 'Z';
-                }
-                return { ...p, timestamp: ts };
-            }).filter(p => p.latitude != null && p.longitude != null);
-            historySegments = splitAtGaps(historyData);
-
-            if (historyData.length === 0) {
-                alert("Ingen historik hittades.");
-                exitHistoryMode();
-                return;
-            }
-
-            currentHistoryShipName = shipName;
-            initializeHistoryMap(shipName);
-
-        } catch (error) {
-            console.error(error);
-            alert("Hittade ingen historik.");
-            exitHistoryMode();
-        }
+            return { ...p, timestamp: ts };
+        }).filter(p => p.latitude != null && p.longitude != null);
     }
 
-    function initializeHistoryMap(shipName, startAtTime = null) {
-        historyLayerGroup.addTo(lfmap);
-        document.getElementById('history-title').innerText = formatName(shipName);
+    // boats: [{ mmsi, name, color? }], one boat without color = classic single history
+    async function loadHistoryTracks(boats, durationStr) {
+        const loadId = ++historyLoadId;
+        stopPlayback();
+        historyDurationStr = durationStr;
+        historyDurationHours = durationToHours(durationStr);
+
+        historyTracks = [];
+        historyTimeline = [];
         historyLayerGroup.clearLayers();
+        document.getElementById('history-legend').innerHTML = '';
+
+        if (!isHistoryMode) {
+            isHistoryMode = true;
+            document.body.classList.add('history-active');
+            redrawAllMarkers();
+        }
+
+        document.getElementById('history-title').innerText = boats.length === 1
+            ? `Laddar historik för ${formatName(boats[0].name)}...`
+            : `Laddar historik för ${boats.length} båtar...`;
+        document.getElementById('history-controls').style.display = 'block';
+        window.placeHistoryCard();
+
+        const results = await Promise.allSettled(boats.map(boat => fetchTrackData(normalizeMmsi(boat.mmsi), durationStr)));
+        if (loadId !== historyLoadId) return; // closed or replaced while loading
+
+        results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
+
+        // boats without data are dropped, the rest keep the color they were picked with
+        historyTracks = boats
+            .map((boat, i) => ({
+                mmsi: normalizeMmsi(boat.mmsi),
+                name: boat.name,
+                color: boat.color || null,
+                data: results[i].status === 'fulfilled' ? results[i].value : []
+            }))
+            .filter(track => track.data.length > 0)
+            .map(track => ({ ...track, segments: splitAtGaps(track.data), vector: null }));
+
+        if (historyTracks.length === 0) {
+            alert("Ingen historik hittades.");
+            exitHistoryMode();
+            return;
+        }
+
+        historyTimeline = [...new Set(historyTracks.flatMap(track => track.data.map(pointTime)))].sort((a, b) => a - b);
+        initializeHistoryMap();
+    }
+
+    function initializeHistoryMap() {
+        historyLayerGroup.addTo(lfmap);
+        document.getElementById('history-title').innerText = historyTracks.length === 1
+            ? formatName(historyTracks[0].name)
+            : `${historyTracks.length} båtar`;
 
         const cutoffTime = getHistoryCutoffTime();
-
-        // one line per stretch without gaps, points older than the cutoff dropped
-        const segments = historySegments
-            .map(seg => historyData.slice(seg.start, seg.end + 1)
-                .filter(p => pointTime(p) >= cutoffTime)
-                .map(p => [p.latitude, p.longitude]))
-            .filter(seg => seg.length > 0);
-
         const isSatellite = lfmap.hasLayer(BASEMAPS.Satellit);
-        const pathColor = isSatellite ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 110, 0, 0.4)';
-        
-        historyPath = L.polyline(segments, {
-            color: pathColor,
-            weight: 3,
-            dashArray: '5, 10'
-        }).addTo(historyLayerGroup);
+        const bounds = L.latLngBounds([]);
 
-        lfmap.fitBounds(historyPath.getBounds(), { padding: [50, 50] });
-        
-        let targetPoint = null;
+        historyTracks.forEach(track => {
+            // one line per stretch without gaps, points older than the cutoff dropped
+            const segments = track.segments
+                .map(seg => track.data.slice(seg.start, seg.end + 1)
+                    .filter(p => pointTime(p) >= cutoffTime)
+                    .map(p => [p.latitude, p.longitude]))
+                .filter(seg => seg.length > 0);
 
-        if (startAtTime && startAtTime >= cutoffTime) {
-            const { point } = findNearestDataPoint(startAtTime);
-            targetPoint = point;
-        }
-        
-        if (!targetPoint && historyData.length > 0) {
-            targetPoint = historyData[historyData.length - 1];
-        }
-
-        if (targetPoint) {
-            historyMarker = L.marker([targetPoint.latitude, targetPoint.longitude], {
-                icon: getShipIcon(shipName),
-                zIndexOffset: 1000
+            track.path = L.polyline(segments, {
+                color: track.color || defaultTrailColor(isSatellite),
+                opacity: track.color ? 0.7 : 1,
+                weight: 3,
+                dashArray: '5, 10'
             }).addTo(historyLayerGroup);
-        }
+            if (segments.length > 0) bounds.extend(track.path.getBounds());
 
+            // added to the map in updateHistoryUI_Render, only while the boat has data at the slider time
+            const last = track.data[track.data.length - 1];
+            track.marker = L.marker([last.latitude, last.longitude], {
+                icon: getShipIcon(track.name),
+                zIndexOffset: 1000
+            });
+            if (historyTracks.length > 1) {
+                track.marker.bindTooltip(formatName(track.name), { offset: [20, 0], permanent: true });
+            }
+        });
+
+        if (bounds.isValid()) lfmap.fitBounds(bounds, { padding: [50, 50] });
+
+        renderHistoryLegend();
         updateSliderRange();
         renderSpeedButtons();
 
-        if (targetPoint) {
-            const slider = document.getElementById('history-slider');
-            slider.value = new Date(targetPoint.timestamp).getTime();
-            updateHistoryUI_Render(targetPoint);
-        }
+        const startTime = historyTimeline[historyTimeline.length - 1];
+        document.getElementById('history-slider').value = startTime;
+        updateHistoryUI_Render(startTime);
+    }
+
+    function renderHistoryLegend() {
+        const legend = document.getElementById('history-legend');
+        legend.innerHTML = '';
+        historyTracks.forEach(track => {
+            const row = document.createElement('div');
+            row.className = 'history-legend-row';
+            row.innerHTML = `
+                <span class="trail-dot" style="background: ${track.color || getShipColor(track.name)}"></span>
+                <span class="history-legend-name"></span>
+                <span class="tag is-primary is-light" data-field="speed">-</span>
+                <span class="tag is-info is-light" data-field="course">-</span>
+            `;
+            row.querySelector('.history-legend-name').textContent = formatName(track.name);
+            row.addEventListener('click', () => {
+                if (historyLayerGroup.hasLayer(track.marker)) lfmap.panTo(track.marker.getLatLng());
+            });
+            track.legendRow = row;
+            legend.appendChild(row);
+        });
     }
 
     function updateSliderRange() {
         // recompute the visible time window
         const nowMs = new Date().getTime();
         const minMs = nowMs - (historyDurationHours * 60 * 60 * 1000);
-        
+
         const slider = document.getElementById('history-slider');
         const gradientBar = document.getElementById('slider-gradient');
 
@@ -1136,22 +1212,32 @@
             updateHistoryFromSlider(minMs);
         }
 
-        if (historyData.length < 2) {
+        if (historyTimeline.length < 2) {
             gradientBar.style.background = '#ddd';
             return;
         }
+
+        // every boat's stretches clipped to the visible range, overlaps merged so the gradient stops stay in order
+        const ranges = historyTracks
+            .flatMap(track => track.segments.map(seg => [
+                Math.max(minMs, Math.min(nowMs, pointTime(track.data[seg.start]))),
+                Math.max(minMs, Math.min(nowMs, pointTime(track.data[seg.end])))
+            ]))
+            .filter(([s, e]) => s < e) // single point, or outside the window
+            .sort((a, b) => a[0] - b[0]);
+
+        const merged = [];
+        ranges.forEach(([s, e]) => {
+            const prev = merged[merged.length - 1];
+            if (prev && s <= prev[1]) prev[1] = Math.max(prev[1], e);
+            else merged.push([s, e]);
+        });
 
         const totalDuration = nowMs - minMs;
         const gradientStops = [];
 
         // green where there is data, grey in between (the first and last stop colors fill the ends)
-        historySegments.forEach(seg => {
-            // clip segments to the visible range
-            const s = Math.max(minMs, Math.min(nowMs, pointTime(historyData[seg.start])));
-            const e = Math.max(minMs, Math.min(nowMs, pointTime(historyData[seg.end])));
-
-            if (s >= e) return; // single point, or outside the window
-
+        merged.forEach(([s, e]) => {
             const p1 = (((s - minMs) / totalDuration) * 100).toFixed(2);
             const p2 = (((e - minMs) / totalDuration) * 100).toFixed(2);
 
@@ -1165,105 +1251,126 @@
         }
     }
 
-    function findNearestDataPoint(targetTimeMs) {
-        let nearest = null;
-        let minDiff = Infinity;
-        let index = -1;
+    // index of the timeline entry closest to targetTimeMs, -1 if the timeline is empty
+    function findNearestTimelineIndex(targetTimeMs) {
+        let lo = 0;
+        let hi = historyTimeline.length - 1;
+        if (hi < 0) return -1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (historyTimeline[mid] < targetTimeMs) lo = mid + 1; else hi = mid;
+        }
+        if (lo > 0 && targetTimeMs - historyTimeline[lo - 1] <= historyTimeline[lo] - targetTimeMs) return lo - 1;
+        return lo;
+    }
 
-        for (let i = 0; i < historyData.length; i++) {
-            const time = new Date(historyData[i].timestamp).getTime();
-            const diff = Math.abs(time - targetTimeMs);
-            if (diff < minDiff) {
-                minDiff = diff;
-                nearest = historyData[i];
-                index = i;
+    // a boat's latest point at or before timeMs, null if it has no data that recent
+    function trackPointAt(track, timeMs) {
+        let lo = 0;
+        let hi = track.data.length - 1;
+        let found = -1;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (pointTime(track.data[mid]) <= timeMs) {
+                found = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
             }
         }
-        return { point: nearest, index: index };
+        if (found === -1 || timeMs - pointTime(track.data[found]) > GAP_THRESHOLD) return null;
+        return track.data[found];
     }
 
     function updateHistoryFromSlider(timestampVal) {
         // dragging the slider snaps to the nearest point
-        const targetTime = parseInt(timestampVal);
-        const { point } = findNearestDataPoint(targetTime);
-        if (point) {
-            updateHistoryUI_Render(point);
+        const index = findNearestTimelineIndex(parseInt(timestampVal));
+        if (index !== -1) {
+            updateHistoryUI_Render(historyTimeline[index]);
         }
     }
 
     window.snapHistorySlider = function(timestampVal) {
-        const targetTime = parseInt(timestampVal);
-        const { point } = findNearestDataPoint(targetTime);
-
-        if (point) {
-            const snapTime = new Date(point.timestamp).getTime();
+        const index = findNearestTimelineIndex(parseInt(timestampVal));
+        if (index !== -1) {
+            const snapTime = historyTimeline[index];
             document.getElementById('history-slider').value = snapTime;
-            updateHistoryUI_Render(point);
+            updateHistoryUI_Render(snapTime);
         }
     }
 
     function stepHistory(direction) {
         const slider = document.getElementById('history-slider');
-        const currentVal = parseInt(slider.value);
-        
-        const { index } = findNearestDataPoint(currentVal);
-        
+        const index = findNearestTimelineIndex(parseInt(slider.value));
         if (index === -1) return;
 
-        // jump to the next/previous index
-        let newIndex = index + direction;
-        
-        if (newIndex < 0) newIndex = 0;
-        if (newIndex >= historyData.length) newIndex = historyData.length - 1;
-        
-        const newPoint = historyData[newIndex];
-        const newTime = new Date(newPoint.timestamp).getTime();
-        
+        // jump to the next/previous timestamp any boat has
+        const newIndex = Math.max(0, Math.min(historyTimeline.length - 1, index + direction));
+        const newTime = historyTimeline[newIndex];
+
         // move the slider to match
         slider.value = newTime;
-        updateHistoryUI_Render(newPoint);
+        updateHistoryUI_Render(newTime);
     }
 
-    function updateHistoryUI_Render(point) {
-        const dateStr = new Date(point.timestamp).toLocaleString('sv-SE');
+    function updateHistoryUI_Render(timeMs) {
+        const dateStr = new Date(timeMs).toLocaleString('sv-SE');
         document.getElementById('history-time-label').innerText = dateStr;
+        document.getElementById('history-mini-time').innerText = dateStr;
 
-        const newLatLng = [point.latitude, point.longitude];
-        historyMarker.setLatLng(newLatLng);
+        historyTracks.forEach(track => {
+            const point = trackPointAt(track, timeMs);
 
-        if (point.course !== undefined) {
-            historyMarker.setRotationAngle(point.course);
-        }
+            const row = track.legendRow;
+            row.classList.toggle('is-inactive', !point);
+            row.querySelector('[data-field="speed"]').innerText = point?.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
+            row.querySelector('[data-field="course"]').innerText = point?.course ? Math.round(point.course) + "°" : "-";
 
-        document.getElementById('history-speed').innerText = point.speed ? Number(point.speed).toFixed(1) + " kn" : "-";
-        document.getElementById('history-course').innerText = point.course ? Math.round(point.course) + "°" : "-";
+            // remove old vector if there is one
+            if (track.vector) {
+                historyLayerGroup.removeLayer(track.vector);
+                track.vector = null;
+            }
 
-        // remove old vector if there is one
-        if (historyVector) {
-            historyLayerGroup.removeLayer(historyVector);
-            historyVector = null;
-        }
+            // no data around this time, hide the boat
+            if (!point) {
+                historyLayerGroup.removeLayer(track.marker);
+                return;
+            }
 
-        const speed = parseFloat(point.speed);
-        const course = parseFloat(point.course);
+            track.marker.setLatLng([point.latitude, point.longitude]);
+            if (point.course != null) {
+                track.marker.setRotationAngle(point.course);
+            }
+            if (!historyLayerGroup.hasLayer(track.marker)) track.marker.addTo(historyLayerGroup);
 
-        // draw a new vector if speed is above 0.2 knots
-        if (!isNaN(speed) && !isNaN(course) && speed > 0.2) {
-             const distance = speed * 100; // same scale as the live view
+            const speed = parseFloat(point.speed);
+            const course = parseFloat(point.course);
 
-             const startPoint = L.latLng(point.latitude, point.longitude);
-             const endPoint = L.GeometryUtil.destination(startPoint, course, distance);
+            // draw a new vector if speed is above 0.2 knots
+            if (!isNaN(speed) && !isNaN(course) && speed > 0.2) {
+                 const distance = speed * 100; // same scale as the live view
 
-             const start = [point.latitude, point.longitude];
-             const end = [endPoint.lat, endPoint.lng];
+                 const startPoint = L.latLng(point.latitude, point.longitude);
+                 const endPoint = L.GeometryUtil.destination(startPoint, course, distance);
 
-             historyVector = createVectorLayer(start, end, getShipColor(currentHistoryShipName));
-             historyVector.addTo(historyLayerGroup);
-        }
+                 const start = [point.latitude, point.longitude];
+                 const end = [endPoint.lat, endPoint.lng];
+
+                 // same color as the boat icon, the trail color is only for the line
+                 track.vector = createVectorLayer(start, end, getShipColor(track.name));
+                 track.vector.addTo(historyLayerGroup);
+            }
+        });
     }
 
-    function getSegmentEndIndex(fromIndex) {
-        return historySegments.find(seg => fromIndex <= seg.end)?.end ?? historyData.length - 1;
+    // where playback stops: a single boat at the end of its current stretch, several boats at the end of the timeline
+    function getPlaybackEndIndex(fromIndex) {
+        if (historyTracks.length !== 1) return historyTimeline.length - 1;
+        const track = historyTracks[0];
+        const fromTime = historyTimeline[fromIndex];
+        const seg = track.segments.find(seg => fromTime <= pointTime(track.data[seg.end]));
+        return seg ? findNearestTimelineIndex(pointTime(track.data[seg.end])) : historyTimeline.length - 1;
     }
 
     function togglePlayback() {
@@ -1272,18 +1379,17 @@
 
     function startPlayback() {
         const slider = document.getElementById('history-slider');
-        const { index } = findNearestDataPoint(parseInt(slider.value));
+        const index = findNearestTimelineIndex(parseInt(slider.value));
         if (index === -1) return;
-        const segmentEnd = getSegmentEndIndex(index);
-        if (index >= segmentEnd) return;
+        if (index >= getPlaybackEndIndex(index)) return;
 
         isPlaying = true;
         updatePlayButton();
 
         const intervalMs = PLAYBACK_SPEEDS[playbackSpeedIndex] * 1000;
         playbackInterval = setInterval(() => {
-            const { index: curIdx } = findNearestDataPoint(parseInt(document.getElementById('history-slider').value));
-            if (curIdx >= getSegmentEndIndex(curIdx)) {
+            const curIdx = findNearestTimelineIndex(parseInt(document.getElementById('history-slider').value));
+            if (curIdx >= getPlaybackEndIndex(curIdx)) {
                 stopPlayback();
                 return;
             }
@@ -1301,16 +1407,19 @@
     }
 
     function updatePlayButton() {
-        const btn = document.getElementById('play-button');
-        const icon = document.getElementById('play-icon');
-        if (!btn || !icon) return;
-        if (isPlaying) {
-            icon.className = 'fa-solid fa-pause';
-            btn.classList.replace('is-primary', 'is-warning');
-        } else {
-            icon.className = 'fa-solid fa-play';
-            btn.classList.replace('is-warning', 'is-primary');
-        }
+        // full card and minimized card each have a play button
+        ['play-button', 'mini-play-button'].forEach(id => {
+            const btn = document.getElementById(id);
+            const icon = btn?.querySelector('i');
+            if (!icon) return;
+            if (isPlaying) {
+                icon.className = 'fa-solid fa-pause';
+                btn.classList.replace('is-primary', 'is-warning');
+            } else {
+                icon.className = 'fa-solid fa-play';
+                btn.classList.replace('is-warning', 'is-primary');
+            }
+        });
     }
 
     function renderSpeedButtons() {
@@ -1337,17 +1446,159 @@
 
     function exitHistoryMode() {
         stopPlayback();
+        historyLoadId++;
         isHistoryMode = false;
         document.body.classList.remove('history-active');
-        historyData = [];
-        historySegments = [];
+        historyTracks = [];
+        historyTimeline = [];
 
         document.getElementById('history-controls').style.display = 'none';
+        document.getElementById('history-legend').innerHTML = '';
 
         historyLayerGroup.clearLayers();
         historyLayerGroup.removeFrom(lfmap);
-        
+
         redrawAllMarkers();
+    }
+
+    // MULTI TRAIL PICKER
+    let trailPickerBoats = [];    // [{ mmsi, name, lastSeenMs }] from /api/data/latest
+    let trailPickerSelected = []; // mmsi in pick order, the order decides the trail color
+    let trailPickerDuration = '12h';
+
+    // live WS names by MMSI, cleaned the same way createMarker does
+    function liveNamesByMmsi() {
+        const names = {};
+        Object.values(shipLastUpdate).forEach(message => {
+            if (message.mmsi && message.name) names[normalizeMmsi(message.mmsi)] = message.name.split(/[!\[]/)[0].trim();
+        });
+        return names;
+    }
+
+    // known name first, then the live name, otherwise just the MMSI
+    function historyBoatName(mmsi, liveNames) {
+        return MMSI_NAME_MAP[mmsi] || liveNames[mmsi] || mmsi;
+    }
+
+    // Vässarö boats, rescue boats, other named boats, then bare MMSIs
+    function trailPickerRank(boat) {
+        if (boat.name === boat.mmsi) return 3;
+        return { vassaro: 0, rescue: 1 }[getShipCategory(boat.name)] ?? 2;
+    }
+
+    async function openMultiTrailPicker() {
+        trailPickerSelected = historyTracks.map(track => track.mmsi);
+        if (isHistoryMode) trailPickerDuration = historyDurationStr;
+        document.getElementById('trail-picker-search').value = '';
+        document.getElementById('trail-picker-list').innerHTML = `<p class="has-text-centered has-text-grey is-size-7 p-3">Laddar båtar...</p>`;
+        renderTrailPickerDurations();
+        updateTrailPickerFooter();
+        document.getElementById('multi-trail-modal').classList.add('is-active');
+        lfmap.closePopup();
+        window.collapsePanelOnMobile();
+
+        try {
+            const response = await fetch('https://ais.vassaro.net/api/data/latest');
+            if (!response.ok) throw new Error("Kunde inte hämta båtar");
+            const vessels = await response.json();
+            const liveNames = liveNamesByMmsi();
+
+            trailPickerBoats = vessels.map(vessel => {
+                const mmsi = normalizeMmsi(vessel.mmsi);
+                let ts = vessel.timestamp;
+                if (ts && typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) ts += 'Z';
+                return { mmsi, name: historyBoatName(mmsi, liveNames), lastSeenMs: ts ? new Date(ts).getTime() : 0 };
+            }).sort((a, b) => trailPickerRank(a) - trailPickerRank(b) || a.name.localeCompare(b.name, "sv-se"));
+
+            renderTrailPickerList();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('trail-picker-list').innerHTML = `<p class="has-text-centered has-text-danger is-size-7 p-3">Kunde inte hämta båtar.</p>`;
+        }
+    }
+
+    function closeMultiTrailPicker() {
+        document.getElementById('multi-trail-modal').classList.remove('is-active');
+    }
+
+    function renderTrailPickerDurations() {
+        document.querySelectorAll('#trail-picker-durations .button').forEach(btn => {
+            const isSelected = btn.dataset.duration === trailPickerDuration;
+            btn.classList.toggle('is-link', isSelected);
+            btn.classList.toggle('is-selected', isSelected);
+        });
+    }
+
+    document.querySelectorAll('#trail-picker-durations .button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            trailPickerDuration = btn.dataset.duration;
+            renderTrailPickerDurations();
+            renderTrailPickerList();
+        });
+    });
+
+    document.getElementById('trail-picker-search').addEventListener('input', renderTrailPickerList);
+
+    function renderTrailPickerList() {
+        const list = document.getElementById('trail-picker-list');
+        const query = document.getElementById('trail-picker-search').value.trim().toLowerCase();
+        // only boats seen inside the chosen window have a trail to show
+        const cutoff = Date.now() - durationToHours(trailPickerDuration) * 60 * 60 * 1000;
+        const isFull = trailPickerSelected.length >= TRAIL_COLORS.length;
+
+        const boats = trailPickerBoats.filter(boat =>
+            (boat.lastSeenMs >= cutoff || trailPickerSelected.includes(boat.mmsi)) &&
+            (!query || boat.name.toLowerCase().includes(query) || boat.mmsi.includes(query))
+        );
+
+        list.innerHTML = '';
+        if (boats.length === 0) {
+            list.innerHTML = `<p class="has-text-centered has-text-grey is-size-7 p-3">Inga båtar hittades</p>`;
+        }
+
+        boats.forEach(boat => {
+            const index = trailPickerSelected.indexOf(boat.mmsi);
+            const row = document.createElement('label');
+            row.className = 'trail-picker-row';
+            row.innerHTML = `
+                <input type="checkbox" ${index !== -1 ? 'checked' : ''} ${index === -1 && isFull ? 'disabled' : ''}>
+                <span class="trail-dot" style="background: ${index !== -1 ? TRAIL_COLORS[index] : 'transparent'}"></span>
+                <span class="trail-picker-name ${trailPickerRank(boat) < 2 ? 'has-text-weight-semibold' : ''}"></span>
+                <span class="trail-picker-mmsi">${boat.name !== boat.mmsi ? boat.mmsi : ''}</span>
+            `;
+            row.querySelector('.trail-picker-name').textContent = boat.name === boat.mmsi ? boat.mmsi : formatName(boat.name);
+            row.querySelector('input').addEventListener('change', event => {
+                if (event.target.checked) trailPickerSelected.push(boat.mmsi);
+                else trailPickerSelected = trailPickerSelected.filter(mmsi => mmsi !== boat.mmsi);
+                renderTrailPickerList();
+            });
+            list.appendChild(row);
+        });
+
+        updateTrailPickerFooter();
+    }
+
+    function updateTrailPickerFooter() {
+        document.getElementById('trail-picker-count').textContent = `${trailPickerSelected.length}/${TRAIL_COLORS.length} valda`;
+        document.getElementById('trail-picker-confirm').disabled = trailPickerSelected.length === 0;
+    }
+
+    function clearTrailPicker() {
+        trailPickerSelected = [];
+        renderTrailPickerList();
+    }
+
+    function confirmMultiTrail() {
+        if (trailPickerSelected.length === 0) return;
+        closeMultiTrailPicker();
+        const boats = trailPickerSelected.map((mmsi, i) => ({
+            mmsi,
+            name: trailPickerBoats.find(boat => boat.mmsi === mmsi)?.name
+                || historyTracks.find(track => track.mmsi === mmsi)?.name
+                || mmsi,
+            color: TRAIL_COLORS[i]
+        }));
+        loadHistoryTracks(boats, trailPickerDuration);
     }
 
     function updateShipTable() {
