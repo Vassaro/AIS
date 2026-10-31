@@ -1192,6 +1192,22 @@
         });
     }
 
+    // every boat's stretches as [startMs, endMs], overlaps merged and sorted, these are the green intervals on the slider
+    function getDataRanges() {
+        const ranges = historyTracks
+            .flatMap(track => track.segments.map(seg => [pointTime(track.data[seg.start]), pointTime(track.data[seg.end])]))
+            .filter(([s, e]) => s < e) // single point
+            .sort((a, b) => a[0] - b[0]);
+
+        const merged = [];
+        ranges.forEach(([s, e]) => {
+            const prev = merged[merged.length - 1];
+            if (prev && s <= prev[1]) prev[1] = Math.max(prev[1], e);
+            else merged.push([s, e]);
+        });
+        return merged;
+    }
+
     function updateSliderRange() {
         // recompute the visible time window
         const nowMs = new Date().getTime();
@@ -1217,21 +1233,10 @@
             return;
         }
 
-        // every boat's stretches clipped to the visible range, overlaps merged so the gradient stops stay in order
-        const ranges = historyTracks
-            .flatMap(track => track.segments.map(seg => [
-                Math.max(minMs, Math.min(nowMs, pointTime(track.data[seg.start]))),
-                Math.max(minMs, Math.min(nowMs, pointTime(track.data[seg.end])))
-            ]))
-            .filter(([s, e]) => s < e) // single point, or outside the window
-            .sort((a, b) => a[0] - b[0]);
-
-        const merged = [];
-        ranges.forEach(([s, e]) => {
-            const prev = merged[merged.length - 1];
-            if (prev && s <= prev[1]) prev[1] = Math.max(prev[1], e);
-            else merged.push([s, e]);
-        });
+        // green intervals clipped to the visible range
+        const merged = getDataRanges()
+            .map(([s, e]) => [Math.max(minMs, Math.min(nowMs, s)), Math.max(minMs, Math.min(nowMs, e))])
+            .filter(([s, e]) => s < e); // outside the window
 
         const totalDuration = nowMs - minMs;
         const gradientStops = [];
@@ -1364,13 +1369,16 @@
         });
     }
 
-    // where playback stops: a single boat at the end of its current stretch, several boats at the end of the timeline
-    function getPlaybackEndIndex(fromIndex) {
-        if (historyTracks.length !== 1) return historyTimeline.length - 1;
-        const track = historyTracks[0];
+    // the green interval playback runs in: the one at fromIndex, or the next one if in a gap
+    function getPlaybackRange(fromIndex) {
         const fromTime = historyTimeline[fromIndex];
-        const seg = track.segments.find(seg => fromTime <= pointTime(track.data[seg.end]));
-        return seg ? findNearestTimelineIndex(pointTime(track.data[seg.end])) : historyTimeline.length - 1;
+        return getDataRanges().find(([, e]) => fromTime <= e) || null;
+    }
+
+    // where playback stops: the end of the current green interval, or the end of the timeline after the last one
+    function getPlaybackEndIndex(fromIndex) {
+        const range = getPlaybackRange(fromIndex);
+        return range ? findNearestTimelineIndex(range[1]) : historyTimeline.length - 1;
     }
 
     function togglePlayback() {
@@ -1379,9 +1387,17 @@
 
     function startPlayback() {
         const slider = document.getElementById('history-slider');
-        const index = findNearestTimelineIndex(parseInt(slider.value));
+        let index = findNearestTimelineIndex(parseInt(slider.value));
         if (index === -1) return;
-        if (index >= getPlaybackEndIndex(index)) return;
+
+        // already at the end of an interval, restart it from the beginning
+        if (index >= getPlaybackEndIndex(index)) {
+            const range = getPlaybackRange(index);
+            if (!range) return;
+            index = findNearestTimelineIndex(range[0]);
+            slider.value = historyTimeline[index];
+            updateHistoryUI_Render(historyTimeline[index]);
+        }
 
         isPlaying = true;
         updatePlayButton();
