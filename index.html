@@ -150,7 +150,10 @@
         <div class="modal-background" onclick="closeMultiTrailPicker()"></div>
         <div class="modal-content">
             <div class="box trail-picker">
-                <h3 class="title is-5 mb-1">Flera spår</h3>
+                <div class="is-flex is-justify-content-space-between is-align-items-center mb-1">
+                    <h3 class="title is-5 mb-0">Flera spår</h3>
+                    <button class="delete" aria-label="Stäng" onclick="closeMultiTrailPicker()"></button>
+                </div>
                 <p class="is-size-7 has-text-grey mb-3">Välj båtar att visa på samma tidslinje.</p>
                 <div id="trail-picker-durations" class="buttons has-addons is-centered mb-3">
                     <button class="button is-small" data-duration="12h">12h</button>
@@ -169,7 +172,6 @@
                 </div>
             </div>
         </div>
-        <button class="modal-close is-large" aria-label="close" onclick="closeMultiTrailPicker()"></button>
     </div>
 
     <div id="history-controls" class="box" style="display: none;">
